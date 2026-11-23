@@ -1,0 +1,1316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>默契猜词</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg: #121212; --card: #1e1e1e; --blue: #3b82f6; --red: #ef4444;
+            --text: #f3f4f6; --gold: #fbbf24; --green: #10b981;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+        }
+        body {
+            background-color: var(--bg); color: var(--text); font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 16px;
+            overflow-x: hidden;
+        }
+
+        /* ============ 顶部工具栏 ============ */
+        .toolbar {
+            display: flex; gap: 8px; margin-bottom: 12px; align-items: center;
+        }
+        .mode-tabs {
+            display: flex; gap: 4px;
+            background: var(--card); padding: 4px; border-radius: 10px; border: 1px solid #333;
+        }
+        .mode-tab {
+            padding: 7px 14px; font-size: 12px; font-weight: bold;
+            border: none; border-radius: 7px; cursor: pointer;
+            background: transparent; color: #888; transition: 0.2s;
+        }
+        .mode-tab.active { background: var(--gold); color: #000; }
+
+        .icon-btn {
+            width: 36px; height: 36px; border-radius: 9px;
+            background: var(--card); border: 1px solid #333; color: #ccc;
+            font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: 0.2s;
+        }
+        .icon-btn:hover { background: #2a2a2a; }
+
+        /* ============ 战绩条 ============ */
+        .stats-bar {
+            width: 100%; max-width: 500px; font-size: 12px; color: #888;
+            margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;
+            padding: 6px 12px; background: rgba(255,255,255,0.04); border-radius: 20px;
+        }
+        .stats-bar .highlight { color: var(--gold); font-weight: bold; }
+
+        /* ============ 状态栏 ============ */
+        .status-bar {
+            width: 100%; max-width: 500px;
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;
+        }
+        .round-badge { background: #333; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; color: var(--gold); }
+        .turn-text { font-size: 13px; font-weight: bold; color: #888; }
+
+        .timer-bar-bg {
+            width: 100%; max-width: 500px; height: 6px; background: #333;
+            border-radius: 3px; overflow: hidden; display: none; margin-bottom: 14px;
+        }
+        .timer-bar-fill { height: 100%; width: 100%; background: var(--gold); transition: width 0.1s linear, background-color 0.3s; }
+        .timer-bar-bg.active { display: block; }
+
+        /* ============ 提示词 ============ */
+        .center-prompt { text-align: center; margin-bottom: 22px; }
+        .center-prompt .label { font-size: 12px; color: #888; margin-bottom: 6px; letter-spacing: 2px; }
+        .center-prompt .word {
+            font-size: 38px; font-weight: 900; color: var(--gold);
+            text-shadow: 0 0 20px rgba(251,191,36,0.4); letter-spacing: 4px;
+        }
+
+        /* ============ 双屏 ============ */
+        .dual-screen { display: flex; gap: 14px; width: 100%; max-width: 500px; margin-bottom: 20px; }
+        .player-side { flex: 1; background: var(--card); border-radius: 14px; padding: 14px; display: flex; flex-direction: column; align-items: center; }
+        .player-a { border: 2px solid rgba(59,130,246,0.3); }
+        .player-b { border: 2px solid rgba(239,68,68,0.3); }
+        .player-title { font-size: 13px; font-weight: bold; margin-bottom: 12px; padding: 4px 12px; border-radius: 20px; }
+        .player-a .player-title { background: rgba(59,130,246,0.2); color: var(--blue); }
+        .player-b .player-title { background: rgba(239,68,68,0.2); color: var(--red); }
+
+        .word-slot {
+            width: 100%; height: 76px; display: flex; align-items: center; justify-content: center;
+            font-size: 20px; font-weight: bold; border-radius: 10px;
+            background: rgba(0,0,0,0.4); color: #555; border: 1px dashed #444;
+            text-align: center; word-break: break-all; padding: 0 8px;
+        }
+        .word-slot.filled { border: 1px solid #374151; color: #888; font-size: 16px; }
+        .word-slot.reveal-a { color: var(--blue); border: 1px dashed var(--blue); background: rgba(59,130,246,0.1); }
+        .word-slot.reveal-b { color: var(--red); border: 1px dashed var(--red); background: rgba(239,68,68,0.1); }
+
+        /* ============ 选词 ============ */
+        .action-area { display: none; width: 100%; max-width: 480px; margin-top: 6px; }
+        .action-area.active { display: block; }
+        .bubble-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 18px; }
+        .word-bubble {
+            padding: 10px 18px; border-radius: 26px; font-size: 15px; font-weight: bold;
+            cursor: pointer; transition: all 0.2s cubic-bezier(0.175,0.885,0.32,1.275);
+            box-shadow: 0 3px 5px rgba(0,0,0,0.2); color: #333;
+        }
+        .word-bubble:active { transform: scale(0.9); }
+        .word-bubble.selected {
+            transform: scale(1.08); box-shadow: 0 0 18px rgba(251,191,36,0.6);
+            border: 2px solid var(--gold); color: #000 !important;
+        }
+        .expand-btn {
+            width: 100%; padding: 10px; background: transparent; color: #888;
+            border: 1px dashed #555; border-radius: 26px; font-size: 13px; cursor: pointer; margin-bottom: 16px;
+        }
+        button.submit-btn {
+            width: 100%; padding: 13px; font-size: 16px; font-weight: bold;
+            border-radius: 10px; border: none; background: var(--gold); color: #000; cursor: pointer;
+        }
+        button.submit-btn:disabled { background: #555; color: #888; cursor: not-allowed; }
+
+        /* ============ 联机面板 ============ */
+        .online-panel {
+            display: none; width: 100%; max-width: 400px; margin-top: 20px;
+            background: var(--card); border: 1px solid #333; border-radius: 14px; padding: 22px; text-align: center;
+        }
+        .online-panel.active { display: block; }
+        .online-panel h3 { color: var(--gold); margin: 0 0 6px; font-size: 17px; }
+        .online-panel .hint { font-size: 12px; color: #888; line-height: 1.6; margin-bottom: 16px; }
+        .room-code-display { font-family: 'Courier New', monospace; font-weight: bold; color: var(--gold); letter-spacing: 8px; font-size: 32px; margin: 10px 0; }
+        .room-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .room-input {
+            flex: 1; padding: 12px; font-size: 20px; text-align: center; letter-spacing: 6px;
+            border-radius: 8px; border: 2px solid #444; background: #111; color: #fff;
+            outline: none; text-transform: uppercase; font-family: 'Courier New', monospace; font-weight: bold;
+        }
+        button.online-btn {
+            padding: 12px 20px; font-size: 14px; font-weight: bold; border-radius: 8px;
+            border: none; background: var(--gold); color: #000; cursor: pointer;
+        }
+
+        /* ============ 历史 ============ */
+        .history-container { width: 100%; max-width: 500px; margin-top: 24px; }
+        .history-title { font-size: 13px; color: #888; margin-bottom: 10px; display: flex; justify-content: space-between; }
+        .history-row {
+            background: var(--card); border-radius: 10px; padding: 12px 14px;
+            margin-bottom: 8px; display: flex; align-items: center; font-size: 14px;
+            animation: slideIn 0.25s ease-out;
+        }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .history-num { font-size: 11px; color: #666; width: 54px; flex-shrink: 0; }
+        .history-word-a { flex: 1; text-align: right; font-weight: bold; color: var(--blue); padding-right: 10px; word-break: break-all; }
+        .history-icon { width: 30px; text-align: center; font-weight: bold; color: #555; }
+        .history-icon.hit { color: var(--green); text-shadow: 0 0 8px rgba(16,185,129,0.5); }
+        .history-word-b { flex: 1; text-align: left; font-weight: bold; color: var(--red); padding-left: 10px; word-break: break-all; }
+
+        /* ============ 遮罩与弹窗 ============ */
+        .overlay {
+            position: fixed; inset: 0; background: rgba(18,18,18,0.97);
+            z-index: 1000; display: none; flex-direction: column; justify-content: center; align-items: center; padding: 24px;
+        }
+        .overlay.show { display: flex; }
+        .overlay h2 { font-size: 22px; color: var(--gold); margin-bottom: 10px; text-align: center; }
+        .overlay p { color: #aaa; margin-bottom: 24px; text-align: center; font-size: 13px; line-height: 1.6; }
+        .overlay button {
+            padding: 13px 32px; font-size: 16px; font-weight: bold; border-radius: 30px;
+            border: 2px solid var(--gold); background: transparent; color: var(--gold); cursor: pointer;
+        }
+
+        .result-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.88);
+            z-index: 2000; display: none; justify-content: center; align-items: center; padding: 20px;
+        }
+        .result-modal.show { display: flex; }
+        .result-box {
+            background: var(--card); padding: 28px 30px; border-radius: 18px; text-align: center;
+            border: 2px solid var(--green); box-shadow: 0 0 30px rgba(16,185,129,0.3);
+            max-width: 90vw; animation: pop 0.35s cubic-bezier(0.175,0.885,0.32,1.275);
+        }
+        @keyframes pop { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .result-box h2 { color: var(--green); font-size: 28px; margin: 0 0 8px; }
+        .result-box p { font-size: 14px; color: #ccc; margin: 4px 0; }
+        .result-box .final-word { color: var(--gold); font-size: 22px; font-weight: bold; margin: 10px 0; }
+        .result-box .stats-line { font-size: 12px; color: #888; margin: 12px 0; }
+        .result-box button {
+            margin-top: 14px; padding: 12px 28px; font-size: 15px; font-weight: bold;
+            border-radius: 10px; border: none; background: var(--green); color: #fff; cursor: pointer;
+        }
+
+        /* ============ 设置面板 ============ */
+        .panel-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.88);
+            z-index: 3000; display: none; justify-content: center; align-items: center; padding: 20px;
+        }
+        .panel-modal.show { display: flex; }
+        .panel-box {
+            background: var(--card); border-radius: 16px; padding: 22px 24px;
+            max-width: 90vw; width: 340px; animation: pop 0.25s ease-out;
+            max-height: 85vh; overflow-y: auto;
+        }
+        .panel-box h2 { color: var(--gold); font-size: 18px; margin: 0 0 16px; text-align: center; }
+        .setting-group { margin-bottom: 18px; }
+        .setting-label { font-size: 12px; color: #888; margin-bottom: 8px; font-weight: bold; }
+        .setting-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0; font-size: 14px; color: #e2e8f0;
+        }
+        .setting-row + .setting-row { border-top: 1px solid rgba(255,255,255,0.05); }
+        .toggle {
+            position: relative; width: 46px; height: 24px; border-radius: 12px;
+            background: rgba(255,255,255,0.1); cursor: pointer; transition: 0.2s; flex-shrink: 0;
+        }
+        .toggle::after {
+            content: ""; position: absolute; top: 3px; left: 3px;
+            width: 18px; height: 18px; border-radius: 50%; background: #94a3b8; transition: 0.2s;
+        }
+        .toggle.on { background: rgba(139,92,246,0.5); }
+        .toggle.on::after { left: 25px; background: #c4b5fd; box-shadow: 0 0 10px #c4b5fd; }
+        .toggle.disabled { opacity: 0.35; pointer-events: none; }
+
+        .pill-group { display: flex; gap: 6px; flex-wrap: wrap; }
+        .pill {
+            padding: 8px 14px; font-size: 13px; font-weight: bold; border-radius: 18px;
+            background: rgba(255,255,255,0.06); color: #94a3b8; cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.1); transition: 0.2s;
+        }
+        .pill.active { background: var(--gold); color: #000; border-color: var(--gold); }
+        .pill.disabled { opacity: 0.35; pointer-events: none; }
+
+        .settings-note { font-size: 11px; color: #666; margin-top: 6px; line-height: 1.5; }
+        .panel-footer { display: flex; gap: 10px; margin-top: 18px; }
+        .panel-footer button {
+            flex: 1; padding: 11px; font-size: 14px; font-weight: bold;
+            border-radius: 10px; border: none; cursor: pointer;
+        }
+        .btn-ghost { background: rgba(255,255,255,0.08); color: #aaa; }
+        .btn-primary { background: var(--gold); color: #000; }
+        .btn-danger { background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.3) !important; }
+
+        /* ============ 排行榜 ============ */
+        .lb-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+        .lb-tab {
+            flex: 1; padding: 8px 6px; font-size: 12px; font-weight: bold;
+            color: #94a3b8; background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; cursor: pointer; transition: 0.2s;
+        }
+        .lb-tab.active { color: #000; background: var(--gold); border-color: var(--gold); }
+
+        .lb-list { max-height: 340px; overflow-y: auto; margin-bottom: 14px; }
+        .lb-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 9px 10px; border-radius: 8px; font-size: 13px;
+            background: rgba(0,0,0,0.2); margin-bottom: 6px;
+        }
+        .lb-row.top1 { background: rgba(251,191,36,0.12); }
+        .lb-row.top2 { background: rgba(203,213,225,0.08); }
+        .lb-row.top3 { background: rgba(180,120,80,0.1); }
+        .lb-rank {
+            width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: bold; color: #64748b; background: rgba(255,255,255,0.06);
+        }
+        .lb-rank.gold { background: #fbbf24; color: #422006; }
+        .lb-rank.silver { background: #cbd5e1; color: #1e293b; }
+        .lb-rank.bronze { background: #d97757; color: #2a1205; }
+        .lb-main { flex: 1; }
+        .lb-metric { font-weight: bold; color: #e2e8f0; font-size: 14px; }
+        .lb-detail { font-size: 11px; color: #666; margin-top: 2px; }
+        .lb-empty { text-align: center; color: #475569; padding: 36px 10px; font-size: 13px; line-height: 1.8; }
+
+        /* ============ toast / canvas ============ */
+        #toast {
+            position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%) translateY(16px);
+            background: rgba(43,43,43,0.95); color: #fff; padding: 10px 20px; border-radius: 20px;
+            font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s;
+            z-index: 9999; text-align: center; max-width: 88vw;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #toast.warn { color: #fbbf24; } #toast.error { color: #f87171; } #toast.ok { color: #4ade80; }
+        #fxCanvas { position: fixed; inset: 0; pointer-events: none; z-index: 500; }
+
+        @media (max-width: 480px) {
+            .center-prompt .word { font-size: 32px; }
+            .word-slot { height: 66px; font-size: 18px; }
+            .word-bubble { padding: 9px 15px; font-size: 14px; }
+            .mode-tab { padding: 6px 10px; font-size: 11px; }
+            .icon-btn { width: 32px; height: 32px; font-size: 14px; }
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="fxCanvas"></canvas>
+
+    <!-- 工具栏 -->
+    <div class="toolbar">
+        <div class="mode-tabs">
+            <button class="mode-tab active" data-mode="local">同屏双人</button>
+            <button class="mode-tab" data-mode="online">异地联机</button>
+        </div>
+        <button class="icon-btn" onclick="openLeaderboard()" title="排行榜">🏆</button>
+        <button class="icon-btn" onclick="openSettings()" title="设置">⚙️</button>
+    </div>
+
+    <!-- 战绩条 -->
+    <div class="stats-bar">
+        <span>📊 战绩</span>
+        <span id="stats-summary">--</span>
+    </div>
+
+    <div class="status-bar">
+        <div class="round-badge" id="roundText">第 1 回合</div>
+        <div class="turn-text" id="turnText">准备开始</div>
+    </div>
+    <div class="timer-bar-bg" id="timerBarBg">
+        <div class="timer-bar-fill" id="timerBarFill"></div>
+    </div>
+
+    <div class="center-prompt">
+        <div class="label">本轮核心词</div>
+        <div class="word" id="promptWord">--</div>
+    </div>
+
+    <div class="dual-screen">
+        <div class="player-side player-a">
+            <div class="player-title">玩家 A</div>
+            <div class="word-slot" id="slotA">??</div>
+        </div>
+        <div class="player-side player-b">
+            <div class="player-title">玩家 B</div>
+            <div class="word-slot" id="slotB">??</div>
+        </div>
+    </div>
+
+    <div class="action-area" id="actionArea">
+        <div class="bubble-grid" id="bubbleGrid"></div>
+        <button class="expand-btn" id="expandBtn">没有合适的？点击查看全部选项 👇</button>
+        <button class="submit-btn" id="submitBtn" disabled>确认提交</button>
+    </div>
+
+    <div class="online-panel" id="onlinePanel">
+        <h3>异地联机</h3>
+        <div class="hint">一方创建房间，把 4 位房间号发给对方<br>对方输入后即可开始</div>
+        <div id="onlineContent">
+            <button class="online-btn" onclick="createRoom()">创建房间</button>
+        </div>
+        <div class="room-input-row" style="margin-top:16px;">
+            <input type="text" class="room-input" id="roomInput" placeholder="0000" maxlength="4">
+            <button class="online-btn" onclick="joinRoom()">加入</button>
+        </div>
+    </div>
+
+    <div class="history-container" id="historyContainer"></div>
+
+    <!-- 交接遮罩 -->
+    <div class="overlay" id="passOverlay">
+        <h2 id="passTitle">请将设备交给 玩家A</h2>
+        <p>确认拿稳设备后再点击下方按钮</p>
+        <button onclick="localStartTurn()">我准备好了</button>
+    </div>
+
+    <!-- 结果 -->
+    <div class="result-modal" id="resultModal">
+        <div class="result-box">
+            <h2>🎉 默契达成！</h2>
+            <p>你们在第 <span id="finalRound">1</span> 回合，同时想到了：</p>
+            <div class="final-word" id="finalWord">--</div>
+            <div class="stats-line" id="resultStats"></div>
+            <button onclick="closeResultAndRestart()">再来一局</button>
+        </div>
+    </div>
+
+    <!-- 设置 -->
+    <div class="panel-modal" id="settingsModal" onclick="if(event.target===this)closeSettings()">
+        <div class="panel-box">
+            <h2>⚙️ 设置</h2>
+
+            <div class="setting-group">
+                <div class="setting-label">声音</div>
+                <div class="setting-row">
+                    <span>主音量</span>
+                    <div class="toggle" id="toggle-master" onclick="toggleSetting('master')"></div>
+                </div>
+                <div class="setting-row">
+                    <span>操作音效</span>
+                    <div class="toggle" id="toggle-sfx" onclick="toggleSetting('sfx')"></div>
+                </div>
+                <div class="setting-row">
+                    <span>震动反馈</span>
+                    <div class="toggle" id="toggle-vibrate" onclick="toggleSetting('vibrate')"></div>
+                </div>
+            </div>
+
+            <div class="setting-group">
+                <div class="setting-label">倒计时时长</div>
+                <div class="pill-group" id="timePills"></div>
+                <div class="settings-note" id="timeNote"></div>
+            </div>
+
+            <div class="setting-group">
+                <div class="setting-label">每轮气泡数量</div>
+                <div class="pill-group" id="bubblePills"></div>
+                <div class="settings-note" id="bubbleNote"></div>
+            </div>
+
+            <div class="setting-group">
+                <div class="setting-label">危险操作</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                    <button class="btn-ghost" style="flex:1;padding:8px;border-radius:8px;font-size:12px;border:none;cursor:pointer;" onclick="clearStats()">清空战绩</button>
+                    <button class="btn-ghost" style="flex:1;padding:8px;border-radius:8px;font-size:12px;border:none;cursor:pointer;" onclick="clearLeaderboard()">清空排行榜</button>
+                </div>
+            </div>
+
+            <div class="panel-footer">
+                <button class="btn-ghost" onclick="resetSettings()">恢复默认</button>
+                <button class="btn-primary" onclick="closeSettings()">完成</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 排行榜 -->
+    <div class="panel-modal" id="leaderboardModal" onclick="if(event.target===this)closeLeaderboard()">
+        <div class="panel-box">
+            <h2>🏆 联机排行榜</h2>
+            <div class="lb-tabs">
+                <button class="lb-tab active" data-tab="combined" onclick="switchLbTab('combined')">默契榜</button>
+                <button class="lb-tab" data-tab="fastest" onclick="switchLbTab('fastest')">最快单轮</button>
+            </div>
+            <div class="lb-list" id="lbList"></div>
+            <div class="settings-note" style="text-align:center;">仅记录异地联机模式的数据</div>
+            <div class="panel-footer">
+                <button class="btn-primary" onclick="closeLeaderboard()" style="width:100%;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+<script>
+    // ================= 词库 =================
+    const gameData = {
+        categories: [
+            { category: "水果", difficulty: 1, words: ["苹果","香蕉","橘子","西瓜","葡萄","草莓","芒果","菠萝","樱桃","桃子","梨","柠檬","哈密瓜","柚子","火龙果","猕猴桃","蓝莓","榴莲","木瓜","石榴","枇杷","杨梅","椰子","甘蔗","百香果","山竹","桑葚","无花果"] },
+            { category: "动物", difficulty: 1, words: ["狗","猫","大象","老虎","狮子","猴子","熊猫","长颈鹿","兔子","老鼠","企鹅","鸟","猪","牛","马","羊","鸡","鸭","蛇","青蛙","鲨鱼","鲸鱼","海豚","乌龟","蝴蝶","蜘蛛","蚂蚁","恐龙","考拉","袋鼠","犀牛","河马"] },
+            { category: "颜色", difficulty: 1, words: ["红色","蓝色","绿色","黄色","紫色","黑色","白色","粉色","橙色","青色","灰色","金色","银色","棕色","卡其色","米色","藏青色","酒红色","天蓝","墨绿"] },
+            { category: "交通工具", difficulty: 1, words: ["汽车","火车","飞机","轮船","自行车","电动车","地铁","公交","火箭","飞船","高铁","摩托车","三轮车","滑板","热气球","直升机","坦克","潜水艇","缆车","马车","独轮车"] },
+            { category: "职业", difficulty: 2, words: ["医生","老师","警察","律师","厨师","司机","程序员","设计师","会计","护士","消防员","飞行员","宇航员","快递员","外卖员","服务员","演员","歌手","作家","记者","农民","工人","老板","保安","理发师","摄影师"] },
+            { category: "游戏", difficulty: 2, words: ["王者荣耀","和平精英","原神","英雄联盟","吃鸡","我的世界","五子棋","俄罗斯方块","斗地主","麻将","象棋","围棋","跳一跳","消消乐","贪吃蛇","植物大战僵尸","超级马里奥","塞尔达传说","穿越火线","地下城与勇士","阴阳师","蛋仔派对","光遇","星露谷"] },
+            { category: "明星名人", difficulty: 3, words: ["周杰伦","成龙","刘德华","迪丽热巴","杨幂","胡歌","彭于晏","吴彦祖","张学友","林俊杰","陈奕迅","王菲","邓紫棋","蔡徐坤","肖战","王一博","赵丽颖","刘亦菲","沈腾","马丽","马斯克","马云","雷军","刘强东","易烊千玺","杨紫"] },
+            { category: "饮料", difficulty: 1, words: ["可乐","雪碧","奶茶","咖啡","啤酒","果汁","白开水","矿泉水","牛奶","茶","芬达","王老吉","红牛","脉动","元气森林","冰红茶","绿茶","柠檬水","豆浆","酸奶","椰汁"] },
+            { category: "城市", difficulty: 2, words: ["北京","上海","广州","深圳","重庆","成都","杭州","武汉","西安","南京","天津","苏州","长沙","郑州","青岛","厦门","三亚","哈尔滨","拉萨","香港","澳门","台北","纽约","伦敦","巴黎","东京","首尔","新加坡"] },
+            { category: "日常动作", difficulty: 1, words: ["吃饭","睡觉","跑步","喝水","洗澡","唱歌","跳舞","看电影","玩游戏","看书","逛街","开车","游泳","打球","刷牙","洗脸","做饭","洗碗","扫地","发呆","打电话","拍照","写字"] },
+            { category: "生活用品", difficulty: 1, words: ["手机","电脑","电视","冰箱","洗衣机","空调","微波炉","电饭煲","吸尘器","吹风机","牙刷","毛巾","雨伞","眼镜","手表","钱包","钥匙","背包","水杯","拖鞋","枕头","被子","衣架","镜子"] },
+            { category: "影视类型", difficulty: 2, words: ["喜剧","恐怖片","动作片","科幻片","爱情片","动画片","纪录片","悬疑片","犯罪片","战争片","武侠片","丧尸片","灾难片","文艺片","穿越剧","宫斗剧"] },
+            { category: "天气现象", difficulty: 2, words: ["晴天","雨天","阴天","下雪","打雷","刮风","台风","冰雹","彩虹","大雾","沙尘暴","流星雨","极光","龙卷风","暴雨"] },
+            { category: "抽象概念", difficulty: 3, words: ["爱情","友情","亲情","时间","金钱","梦想","自由","快乐","悲伤","愤怒","恐惧","孤独","希望","过去","未来","命运","宇宙","空间","重力","磁场","回忆","期待","遗憾","勇气"] },
+            { category: "电子产品品牌", difficulty: 2, words: ["苹果","华为","小米","三星","OPPO","vivo","荣耀","一加","索尼","联想","戴尔","惠普","大疆","任天堂","微软","谷歌","魅族","罗技"] },
+            { category: "乐器", difficulty: 2, words: ["钢琴","吉他","小提琴","大提琴","笛子","二胡","琵琶","古筝","鼓","萨克斯","口琴","手风琴","电子琴","尤克里里","架子鼓"] },
+            { category: "节日", difficulty: 2, words: ["春节","元宵节","清明节","劳动节","端午节","儿童节","中秋节","国庆节","元旦","圣诞节","万圣节","感恩节","情人节","七夕","重阳节"] },
+            { category: "花", difficulty: 2, words: ["玫瑰","百合","郁金香","向日葵","康乃馨","樱花","梅花","桃花","荷花","菊花","兰花","牡丹","茉莉","水仙","蒲公英"] },
+            { category: "运动", difficulty: 2, words: ["篮球","足球","羽毛球","乒乓球","网球","排球","游泳","跑步","滑雪","滑板","拳击","跆拳道","瑜伽","冲浪","芭蕾"] },
+            { category: "宇宙星体", difficulty: 3, words: ["太阳","月亮","地球","火星","金星","木星","土星","水星","海王星","天王星","冥王星","银河","流星","黑洞","彗星","卫星"] }
+        ]
+    };
+
+    const candyColors = ["#FFB3BA","#FFDFBA","#FFFFBA","#BAFFC9","#BAE1FF","#E0BBE4","#FEC8D8","#D4F0F0","#FFD3B6","#A0E7E5"];
+
+    // ================= 设置 =================
+    const SETTINGS_KEY = "sync_guess_settings_v1";
+    const DEFAULT_SETTINGS = {
+        master: true, sfx: true, vibrate: true,
+        timeLimit: 15,       // 10/15/20/30
+        bubbleCount: 10      // 6/10/999(全部)
+    };
+    let settings = { ...DEFAULT_SETTINGS };
+
+    function loadSettings() {
+        try {
+            const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
+            if (s && typeof s === 'object') settings = { ...DEFAULT_SETTINGS, ...s };
+        } catch (e) {}
+    }
+    function saveSettings() { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} }
+
+    // ================= 统计 & 排行榜 =================
+    const STATS_KEY = "sync_guess_stats_v2";
+    const LB_KEY = "sync_guess_leaderboard_v1";
+    let stats = { total: 0, bestRounds: null, totalRounds: 0, bestTime: null };
+    let records = []; // 仅联机模式
+
+    function loadStats() {
+        try {
+            const s = JSON.parse(localStorage.getItem(STATS_KEY) || "null");
+            if (s && typeof s === 'object') stats = { ...stats, ...s };
+        } catch (e) {}
+    }
+    function loadRecords() {
+        try {
+            const arr = JSON.parse(localStorage.getItem(LB_KEY) || "[]");
+            if (Array.isArray(arr)) records = arr;
+        } catch (e) { records = []; }
+    }
+    function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) {} }
+    function saveRecords() { try { localStorage.setItem(LB_KEY, JSON.stringify(records)); } catch (e) {} }
+
+    function recordWin(rounds, timeMs) {
+        stats.total++;
+        stats.totalRounds += rounds;
+        if (stats.bestRounds === null || rounds < stats.bestRounds) stats.bestRounds = rounds;
+        if (stats.bestTime === null || timeMs < stats.bestTime) stats.bestTime = timeMs;
+        saveStats();
+        updateStatsSummary();
+    }
+
+    function recordLeaderboard(rounds, timeMs, word) {
+        // 只在联机模式调用
+        const now = new Date();
+        const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+        const entry = {
+            rounds,
+            totalTime: timeMs,
+            word,
+            date: dateStr,
+            ts: now.getTime()
+        };
+        records.push(entry);
+        // 只保留最近 50 条
+        records.sort((a, b) => a.ts - b.ts);
+        if (records.length > 50) records = records.slice(-50);
+        saveRecords();
+    }
+
+    function updateStatsSummary() {
+        const el = document.getElementById('stats-summary');
+        if (stats.total === 0) { el.innerHTML = `<span style="color:#666;">暂无记录</span>`; return; }
+        const avg = (stats.totalRounds / stats.total).toFixed(1);
+        el.innerHTML = `<span class="highlight">${stats.total}</span> 局 · 平均 ${avg} 轮`;
+    }
+
+    // ================= 音效 =================
+    let audioCtx = null;
+    function initAudio() {
+        if (!settings.master) return;
+        if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    }
+    function playTone(freq, type, dur, vol = 0.1) {
+        if (!audioCtx || !settings.master || !settings.sfx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + dur);
+    }
+    const SFX = {
+        pop: () => playTone(820, 'sine', 0.08, 0.08),
+        heartbeat: () => { playTone(140, 'sine', 0.2, 0.18); setTimeout(() => playTone(110, 'sine', 0.2, 0.12), 180); },
+        match: () => {
+            playTone(523, 'sine', 0.12, 0.1);
+            setTimeout(() => playTone(659, 'sine', 0.12, 0.1), 110);
+            setTimeout(() => playTone(784, 'sine', 0.12, 0.1), 220);
+            setTimeout(() => playTone(1046, 'sine', 0.35, 0.12), 330);
+        },
+        fail: () => { playTone(300, 'sawtooth', 0.2, 0.08); setTimeout(() => playTone(200, 'sawtooth', 0.3, 0.08), 140); },
+        timeout: () => { playTone(880, 'square', 0.08, 0.08); setTimeout(() => playTone(880, 'square', 0.08, 0.08), 130); setTimeout(() => playTone(880, 'square', 0.08, 0.08), 260); }
+    };
+    function vibrate(p) {
+        if (!settings.vibrate) return;
+        if (navigator.vibrate) { try { navigator.vibrate(p); } catch (e) {} }
+    }
+    function showToast(msg, type = '') {
+        const t = document.getElementById('toast');
+        t.innerText = msg; t.className = type; t.classList.add('show');
+        clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 1800);
+    }
+    function formatTime(ms) {
+        const s = Math.floor(ms / 1000);
+        return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}.${Math.floor((ms % 1000) / 100)}`;
+    }
+
+    // ================= 特效 =================
+    const canvas = document.getElementById('fxCanvas');
+    const ctx = canvas.getContext('2d');
+    let particles = [], fxAnimId = null;
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function spawnConfetti() {
+        const colors = ["#fbbf24","#3b82f6","#ef4444","#10b981","#ffb3ba","#e0bbe4"];
+        for (let i = 0; i < 60; i++) {
+            particles.push({
+                x: canvas.width / 2 + (Math.random() - 0.5) * 200,
+                y: canvas.height * 0.4,
+                vx: (Math.random() - 0.5) * 14, vy: Math.random() * -12 - 2,
+                size: Math.random() * 8 + 3, color: colors[Math.floor(Math.random() * colors.length)],
+                life: 1, decay: 0.012, gravity: 0.4,
+                rotation: Math.random() * Math.PI, rotSpeed: (Math.random() - 0.5) * 0.2
+            });
+        }
+        if (!fxAnimId) updateParticles();
+    }
+    function updateParticles() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx; p.y += p.vy; p.vy += p.gravity;
+            p.vx *= 0.99; p.life -= p.decay; p.rotation += p.rotSpeed;
+            if (p.life <= 0 || p.y > canvas.height + 20) { particles.splice(i, 1); continue; }
+            ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rotation);
+            ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+            ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+            ctx.restore();
+        }
+        if (particles.length > 0) fxAnimId = requestAnimationFrame(updateParticles);
+        else { cancelAnimationFrame(fxAnimId); fxAnimId = null; ctx.clearRect(0, 0, canvas.width, canvas.height); }
+    }
+
+    function showBigNumber(num) {
+        let el = document.getElementById('bigCountdown');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'bigCountdown';
+            el.style.cssText = `position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0);font-size:160px;font-weight:900;color:#ef4444;text-shadow:0 0 40px rgba(239,68,68,0.9);z-index:4000;pointer-events:none;opacity:0;font-family:Arial Black,sans-serif;`;
+            document.body.appendChild(el);
+        }
+        el.innerText = num;
+        el.style.animation = 'none'; void el.offsetWidth;
+        el.style.animation = 'bigPop 1s cubic-bezier(0.25,1,0.5,1) forwards';
+    }
+    const styleEl = document.createElement('style');
+    styleEl.innerHTML = `@keyframes bigPop { 0%{transform:translate(-50%,-50%) scale(0.4);opacity:0} 20%{transform:translate(-50%,-50%) scale(1.7);opacity:1} 60%{transform:translate(-50%,-50%) scale(1.1);opacity:1} 100%{transform:translate(-50%,-50%) scale(0.7);opacity:0} }`;
+    document.head.appendChild(styleEl);
+
+    // ================= DOM =================
+    const roundText = document.getElementById('roundText');
+    const turnText = document.getElementById('turnText');
+    const promptWordEl = document.getElementById('promptWord');
+    const slotA = document.getElementById('slotA');
+    const slotB = document.getElementById('slotB');
+    const actionArea = document.getElementById('actionArea');
+    const bubbleGrid = document.getElementById('bubbleGrid');
+    const expandBtn = document.getElementById('expandBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const historyContainer = document.getElementById('historyContainer');
+    const passOverlay = document.getElementById('passOverlay');
+    const passTitle = document.getElementById('passTitle');
+    const resultModal = document.getElementById('resultModal');
+    const timerBarBg = document.getElementById('timerBarBg');
+    const timerBarFill = document.getElementById('timerBarFill');
+    const onlinePanel = document.getElementById('onlinePanel');
+    const settingsModal = document.getElementById('settingsModal');
+    const leaderboardModal = document.getElementById('leaderboardModal');
+
+    // ================= 全局状态 =================
+    let mode = 'local';
+    let currentRound = 1;
+    let roundHistory = [];
+    let currentPrompt = "";
+    let currentCategory = null;
+
+    let peer = null, conn = null, isOnlineReady = false, myRole = 'A';
+
+    // 联机时使用的有效配置（由房主决定）
+    let effectiveConfig = { timeLimit: 15, bubbleCount: 10 };
+
+    // 同屏状态
+    let localState = {
+        phase: 'A_INPUT', wordA: '', wordB: '',
+        roundTimes: [], timer: null, timeLeft: 0, lastSec: -1, roundStart: 0,
+        selectedWord: '', category: null
+    };
+
+    // 联机状态
+    let onlineState = {
+        phase: 'IDLE', myWord: '', opponentWord: '',
+        iHaveSubmitted: false, opponentHasSubmitted: false,
+        roundTimes: [], timer: null, timeLeft: 0, lastSec: -1, roundStart: 0,
+        selectedWord: '', category: null
+    };
+
+    // ================= 公共 UI =================
+    function resetSlots() {
+        slotA.innerText = "??"; slotA.className = "word-slot";
+        slotB.innerText = "??"; slotB.className = "word-slot";
+    }
+    function renderBubbles(words, stateObj) {
+        bubbleGrid.innerHTML = '';
+        words.forEach(word => {
+            const div = document.createElement('div');
+            div.className = 'word-bubble';
+            div.innerText = word;
+            div.style.backgroundColor = candyColors[Math.floor(Math.random() * candyColors.length)];
+            if (word === stateObj.selectedWord) div.classList.add('selected');
+            div.onclick = () => {
+                if (stateObj.timeLeft <= 0) return;
+                SFX.pop();
+                document.querySelectorAll('.word-bubble').forEach(el => el.classList.remove('selected'));
+                div.classList.add('selected');
+                stateObj.selectedWord = word;
+                submitBtn.disabled = false;
+            };
+            bubbleGrid.appendChild(div);
+        });
+        expandBtn.style.display = (words.length < stateObj.category.words.length) ? 'block' : 'none';
+    }
+    function renderHistory() {
+        historyContainer.innerHTML = '';
+        const title = document.createElement('div');
+        title.className = 'history-title';
+        title.innerHTML = `<span>历史记录</span><span>${roundHistory.length} 轮</span>`;
+        historyContainer.appendChild(title);
+        [...roundHistory].reverse().forEach(item => {
+            const isHit = item.a === item.b;
+            const row = document.createElement('div');
+            row.className = 'history-row';
+            row.innerHTML = `
+                <div class="history-num">第${item.round}轮</div>
+                <div class="history-word-a">${item.a}</div>
+                <div class="history-icon ${isHit ? 'hit' : ''}">${isHit ? '⚡' : '≠'}</div>
+                <div class="history-word-b">${item.b}</div>
+            `;
+            historyContainer.appendChild(row);
+        });
+    }
+
+    function startTimerForState(stateObj, timeLimit, onTimeout) {
+        clearInterval(stateObj.timer);
+        stateObj.timeLeft = timeLimit;
+        stateObj.lastSec = timeLimit;
+        stateObj.roundStart = Date.now();
+        timerBarBg.classList.add('active');
+        timerBarFill.style.width = '100%';
+        timerBarFill.style.backgroundColor = 'var(--gold)';
+
+        stateObj.timer = setInterval(() => {
+            stateObj.timeLeft -= 0.1;
+            if (stateObj.timeLeft <= 0) {
+                clearInterval(stateObj.timer);
+                stateObj.timeLeft = 0;
+                onTimeout();
+            }
+            timerBarFill.style.width = (stateObj.timeLeft / timeLimit * 100) + '%';
+            if (stateObj.timeLeft <= 5 && stateObj.timeLeft > 0) {
+                timerBarFill.style.backgroundColor = 'var(--red)';
+                const sec = Math.ceil(stateObj.timeLeft);
+                if (sec !== stateObj.lastSec) {
+                    stateObj.lastSec = sec;
+                    showBigNumber(sec);
+                    SFX.heartbeat();
+                }
+            }
+        }, 100);
+    }
+    function stopTimerForState(stateObj) {
+        clearInterval(stateObj.timer);
+        timerBarBg.classList.remove('active');
+    }
+
+    function triggerRandomPick(stateObj, onSubmit) {
+        SFX.timeout();
+        turnText.innerText = "⚠️ 时间到！随机盲选中...";
+        const bubbles = document.querySelectorAll('.word-bubble');
+        let rollCount = 0;
+        const interval = setInterval(() => {
+            bubbles.forEach(b => b.classList.remove('selected'));
+            const rb = bubbles[Math.floor(Math.random() * bubbles.length)];
+            if (rb) rb.classList.add('selected');
+            SFX.pop();
+            rollCount++;
+            if (rollCount > 10) {
+                clearInterval(interval);
+                const fb = document.querySelector('.word-bubble.selected');
+                if (fb) {
+                    stateObj.selectedWord = fb.innerText;
+                    setTimeout(() => onSubmit(stateObj.selectedWord), 600);
+                }
+            }
+        }, 90);
+    }
+
+    // ================= 同屏模式 =================
+    function localPickCategory() {
+        const cat = gameData.categories[Math.floor(Math.random() * gameData.categories.length)];
+        localState.category = cat;
+        currentCategory = cat;
+        currentPrompt = cat.category;
+        promptWordEl.innerText = currentPrompt;
+    }
+
+    function localNewRound(reset) {
+        if (reset) {
+            currentRound = 1;
+            roundHistory = [];
+            historyContainer.innerHTML = '';
+            localState.roundTimes = [];
+        }
+        if (!localState.category) localPickCategory();
+        resetSlots();
+        localState.phase = 'A_INPUT';
+        localState.wordA = ''; localState.wordB = '';
+        roundText.innerText = `第 ${currentRound} 回合`;
+        turnText.innerText = '轮到 玩家A';
+        passTitle.innerText = "请将设备交给 玩家A";
+        passOverlay.classList.add('show');
+    }
+
+    function localStartTurn() {
+        initAudio();
+        passOverlay.classList.remove('show');
+        actionArea.classList.add('active');
+        localState.selectedWord = '';
+        submitBtn.disabled = true;
+
+        const words = [...localState.category.words];
+        const shuffled = words.sort(() => 0.5 - Math.random());
+        const count = settings.bubbleCount >= 999 ? shuffled.length : Math.min(settings.bubbleCount, shuffled.length);
+        renderBubbles(shuffled.slice(0, count), localState);
+        startTimerForState(localState, settings.timeLimit, () => triggerRandomPick(localState, localSubmit));
+    }
+
+    function localSubmit(word) {
+        stopTimerForState(localState);
+        actionArea.classList.remove('active');
+        localState.roundTimes.push(Date.now() - localState.roundStart);
+
+        if (localState.phase === 'A_INPUT') {
+            localState.wordA = word;
+            slotA.innerText = "已锁定";
+            slotA.classList.add('filled');
+            localState.phase = 'B_INPUT';
+            turnText.innerText = '轮到 玩家B';
+            passTitle.innerText = "请将设备交给 玩家B";
+            passOverlay.classList.add('show');
+        } else if (localState.phase === 'B_INPUT') {
+            localState.wordB = word;
+            slotB.innerText = "已锁定";
+            slotB.classList.add('filled');
+            localState.phase = 'REVEAL';
+            setTimeout(localReveal, 400);
+        }
+    }
+
+    function localReveal() {
+        slotA.innerText = localState.wordA; slotA.className = "word-slot reveal-a";
+        slotB.innerText = localState.wordB; slotB.className = "word-slot reveal-b";
+
+        roundHistory.push({ round: currentRound, a: localState.wordA, b: localState.wordB });
+        renderHistory();
+
+        const isMatch = localState.wordA === localState.wordB;
+        if (isMatch) {
+            const totalTime = localState.roundTimes.reduce((a, b) => a + b, 0);
+            SFX.match(); vibrate([40, 60, 120]); spawnConfetti();
+            // 同屏模式不计入排行榜
+            document.getElementById('finalRound').innerText = currentRound;
+            document.getElementById('finalWord').innerText = localState.wordA;
+            document.getElementById('resultStats').innerText = `共 ${currentRound} 回合 · 累计 ${formatTime(totalTime)}`;
+            resultModal.classList.add('show');
+        } else {
+            SFX.fail();
+            turnText.innerText = "未撞车，准备下一轮...";
+            setTimeout(() => {
+                currentRound++;
+                resetSlots();
+                localState.phase = 'A_INPUT';
+                roundText.innerText = `第 ${currentRound} 回合`;
+                turnText.innerText = '轮到 玩家A';
+                passTitle.innerText = "请将设备交给 玩家A";
+                passOverlay.classList.add('show');
+            }, 2000);
+        }
+    }
+
+    // ================= 联机模式 =================
+    function onlinePickCategory() {
+        const cat = gameData.categories[Math.floor(Math.random() * gameData.categories.length)];
+        onlineState.category = cat;
+        currentCategory = cat;
+        currentPrompt = cat.category;
+        promptWordEl.innerText = currentPrompt;
+    }
+
+    function onlineNewGame() {
+        currentRound = 1;
+        roundHistory = [];
+        historyContainer.innerHTML = '';
+        resetSlots();
+        onlineState.roundTimes = [];
+        onlineState.phase = 'IDLE';
+        stopTimerForState(onlineState);
+
+        // 房主决定配置
+        if (myRole === 'A') {
+            effectiveConfig = {
+                timeLimit: settings.timeLimit,
+                bubbleCount: settings.bubbleCount
+            };
+            onlinePickCategory();
+            if (conn && conn.open) {
+                conn.send({
+                    type: 'NEW_GAME',
+                    category: currentCategory.category,
+                    words: currentCategory.words,
+                    config: effectiveConfig
+                });
+            }
+            onlineStartRound();
+        }
+    }
+
+    function onlineStartRound() {
+        resetSlots();
+        onlineState.iHaveSubmitted = false;
+        onlineState.opponentHasSubmitted = false;
+        onlineState.myWord = '';
+        onlineState.opponentWord = '';
+        onlineState.phase = 'SELECTING';
+        roundText.innerText = `第 ${currentRound} 回合`;
+        turnText.innerText = '选择你的答案';
+        actionArea.classList.add('active');
+        onlineState.selectedWord = '';
+        submitBtn.disabled = true;
+
+        const words = [...onlineState.category.words];
+        const shuffled = words.sort(() => 0.5 - Math.random());
+        const count = effectiveConfig.bubbleCount >= 999 ? shuffled.length : Math.min(effectiveConfig.bubbleCount, shuffled.length);
+        renderBubbles(shuffled.slice(0, count), onlineState);
+        startTimerForState(onlineState, effectiveConfig.timeLimit, () => triggerRandomPick(onlineState, onlineSubmit));
+    }
+
+    function onlineSubmit(word) {
+        stopTimerForState(onlineState);
+        actionArea.classList.remove('active');
+        onlineState.iHaveSubmitted = true;
+        onlineState.myWord = word;
+        onlineState.roundTimes.push(Date.now() - onlineState.roundStart);
+        onlineState.phase = 'WAITING_OPPONENT';
+
+        if (myRole === 'A') { slotA.innerText = "已锁定"; slotA.classList.add('filled'); }
+        else { slotB.innerText = "已锁定"; slotB.classList.add('filled'); }
+
+        if (conn && conn.open) conn.send({ type: 'SUBMIT', word });
+
+        if (onlineState.opponentHasSubmitted) onlineReveal();
+        else turnText.innerText = '已提交，等待对方...';
+    }
+
+    function onlineReveal() {
+        if (onlineState.phase === 'REVEAL') return;
+        onlineState.phase = 'REVEAL';
+        const wordA = myRole === 'A' ? onlineState.myWord : onlineState.opponentWord;
+        const wordB = myRole === 'A' ? onlineState.opponentWord : onlineState.myWord;
+
+        slotA.innerText = wordA; slotA.className = "word-slot reveal-a";
+        slotB.innerText = wordB; slotB.className = "word-slot reveal-b";
+
+        roundHistory.push({ round: currentRound, a: wordA, b: wordB });
+        renderHistory();
+
+        const isMatch = wordA === wordB;
+        if (isMatch) {
+            const totalTime = onlineState.roundTimes.reduce((a, b) => a + b, 0);
+            SFX.match(); vibrate([40, 60, 120]); spawnConfetti();
+            // 联机模式：计入统计和排行榜
+            recordWin(currentRound, totalTime);
+            recordLeaderboard(currentRound, totalTime, wordA);
+            document.getElementById('finalRound').innerText = currentRound;
+            document.getElementById('finalWord').innerText = wordA;
+            document.getElementById('resultStats').innerText = `共 ${currentRound} 回合 · 累计 ${formatTime(totalTime)}`;
+            resultModal.classList.add('show');
+        } else {
+            SFX.fail();
+            turnText.innerText = "未撞车，即将进入下一轮...";
+            setTimeout(() => {
+                currentRound++;
+                resetSlots();
+                if (myRole === 'A') {
+                    onlinePickCategory();
+                    if (conn && conn.open) {
+                        conn.send({
+                            type: 'NEW_ROUND',
+                            round: currentRound,
+                            category: currentCategory.category,
+                            words: currentCategory.words
+                        });
+                    }
+                    onlineStartRound();
+                }
+            }, 2000);
+        }
+    }
+
+    // ================= 设置 UI =================
+    function updateSettingsUI() {
+        document.getElementById('toggle-master').classList.toggle('on', settings.master);
+        document.getElementById('toggle-sfx').classList.toggle('on', settings.sfx);
+        document.getElementById('toggle-vibrate').classList.toggle('on', settings.vibrate);
+
+        // 音效开关在主音量关闭时禁用
+        document.getElementById('toggle-sfx').classList.toggle('disabled', !settings.master);
+
+        // 倒计时 pills
+        const timePills = document.getElementById('timePills');
+        timePills.innerHTML = '';
+        [10, 15, 20, 30].forEach(t => {
+            const p = document.createElement('div');
+            p.className = 'pill' + (settings.timeLimit === t ? ' active' : '');
+            p.innerText = `${t}秒`;
+            p.onclick = () => {
+                if (mode === 'online' && myRole === 'B') return;
+                settings.timeLimit = t;
+                saveSettings();
+                updateSettingsUI();
+                SFX.pop();
+            };
+            timePills.appendChild(p);
+        });
+
+        // 气泡 pills
+        const bubblePills = document.getElementById('bubblePills');
+        bubblePills.innerHTML = '';
+        [
+            { v: 6, label: '6 个' },
+            { v: 10, label: '10 个' },
+            { v: 999, label: '全部' }
+        ].forEach(item => {
+            const p = document.createElement('div');
+            p.className = 'pill' + (settings.bubbleCount === item.v ? ' active' : '');
+            p.innerText = item.label;
+            p.onclick = () => {
+                if (mode === 'online' && myRole === 'B') return;
+                settings.bubbleCount = item.v;
+                saveSettings();
+                updateSettingsUI();
+                SFX.pop();
+            };
+            bubblePills.appendChild(p);
+        });
+
+        // 联机模式下 B 端显示"由房主决定"
+        const isGuestOnline = mode === 'online' && myRole === 'B';
+        document.getElementById('timePills').classList.toggle('disabled', isGuestOnline);
+        document.getElementById('bubblePills').classList.toggle('disabled', isGuestOnline);
+        document.getElementById('timeNote').innerText = isGuestOnline
+            ? `联机中由房主决定 · 当前 ${effectiveConfig.timeLimit} 秒`
+            : '设定每轮选词的倒计时';
+        document.getElementById('bubbleNote').innerText = isGuestOnline
+            ? `联机中由房主决定 · 当前 ${effectiveConfig.bubbleCount >= 999 ? '全部' : effectiveConfig.bubbleCount + ' 个'}`
+            : '设定每轮随机展示的候选词数量';
+    }
+
+    function toggleSetting(key) {
+        if (key !== 'master' && !settings.master) return;
+        settings[key] = !settings[key];
+        saveSettings();
+        updateSettingsUI();
+        if (key === 'master' && settings.master) initAudio();
+        if (key === 'sfx' && settings.sfx && settings.master) { initAudio(); playTone(660, 'sine', 0.08, 0.06); }
+        if (key === 'vibrate' && settings.vibrate) vibrate(20);
+    }
+
+    function openSettings() {
+        initAudio();
+        updateSettingsUI();
+        settingsModal.classList.add('show');
+    }
+    function closeSettings() { settingsModal.classList.remove('show'); }
+    function resetSettings() {
+        settings = { ...DEFAULT_SETTINGS };
+        saveSettings();
+        updateSettingsUI();
+        SFX.pop();
+        showToast('已恢复默认设置', 'ok');
+    }
+    function clearStats() {
+        if (!confirm('确定清空战绩统计吗？')) return;
+        stats = { total: 0, bestRounds: null, totalRounds: 0, bestTime: null };
+        saveStats();
+        updateStatsSummary();
+        showToast('战绩已清空', 'ok');
+    }
+    function clearLeaderboard() {
+        if (!confirm('确定清空排行榜记录吗？')) return;
+        records = [];
+        saveRecords();
+        renderLeaderboard();
+        showToast('排行榜已清空', 'ok');
+    }
+
+    // ================= 排行榜 UI =================
+    let lbTab = 'combined';
+
+    function openLeaderboard() {
+        initAudio();
+        renderLeaderboard();
+        leaderboardModal.classList.add('show');
+    }
+    function closeLeaderboard() { leaderboardModal.classList.remove('show'); }
+
+    function switchLbTab(tab) {
+        lbTab = tab;
+        document.querySelectorAll('.lb-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+        renderLeaderboard();
+        SFX.pop();
+    }
+
+    function renderLeaderboard() {
+        const list = document.getElementById('lbList');
+        list.innerHTML = '';
+
+        if (records.length === 0) {
+            list.innerHTML = `<div class="lb-empty">还没有联机记录<br>完成一局异地联机并达成默契后会在这里显示</div>`;
+            return;
+        }
+
+        let sorted;
+        if (lbTab === 'combined') {
+            // 默契指数：轮数权重高（越少越好），时间次要
+            sorted = [...records].sort((a, b) => {
+                if (a.rounds !== b.rounds) return a.rounds - b.rounds;
+                return a.totalTime - b.totalTime;
+            });
+        } else {
+            // 最快单轮：用总时间 / 轮数作为平均单轮时间
+            sorted = [...records].sort((a, b) => {
+                const avgA = a.totalTime / a.rounds;
+                const avgB = b.totalTime / b.rounds;
+                return avgA - avgB;
+            });
+        }
+
+        sorted.slice(0, 10).forEach((r, idx) => {
+            const row = document.createElement('div');
+            row.className = 'lb-row' + (idx === 0 ? ' top1' : idx === 1 ? ' top2' : idx === 2 ? ' top3' : '');
+            const rankClass = idx === 0 ? 'gold' : idx === 1 ? 'silver' : idx === 2 ? 'bronze' : '';
+            let metricText;
+            if (lbTab === 'combined') {
+                metricText = `${r.rounds} 轮 · ${formatTime(r.totalTime)}`;
+            } else {
+                metricText = `平均 ${formatTime(r.totalTime / r.rounds)} / 轮`;
+            }
+            row.innerHTML = `
+                <div class="lb-rank ${rankClass}">${idx + 1}</div>
+                <div class="lb-main">
+                    <div class="lb-metric">${metricText}</div>
+                    <div class="lb-detail">${r.word || '--'} · ${r.date}</div>
+                </div>
+            `;
+            list.appendChild(row);
+        });
+    }
+
+    // ================= 模式切换 =================
+    document.querySelectorAll('.mode-tab').forEach(tab => {
+        tab.onclick = () => {
+            const nm = tab.dataset.mode;
+            if (nm === mode) return;
+            initAudio();
+            cleanupOnline();
+            stopTimerForState(localState);
+            stopTimerForState(onlineState);
+            actionArea.classList.remove('active');
+            passOverlay.classList.remove('show');
+            resultModal.classList.remove('show');
+
+            mode = nm;
+            document.querySelectorAll('.mode-tab').forEach(t => t.classList.toggle('active', t === tab));
+            onlinePanel.classList.toggle('active', mode === 'online');
+            roundHistory = [];
+            currentRound = 1;
+            historyContainer.innerHTML = '';
+            resetSlots();
+
+            if (mode === 'local') {
+                localState.category = null;
+                currentCategory = null;
+                localNewRound(true);
+            } else {
+                onlineState.category = null;
+                currentCategory = null;
+                isOnlineReady = false;
+                document.getElementById('onlineContent').innerHTML = `<button class="online-btn" onclick="createRoom()">创建房间</button>`;
+                document.getElementById('roomInput').value = '';
+                document.getElementById('roomInput').disabled = false;
+                turnText.innerText = '等待联机...';
+                promptWordEl.innerText = '--';
+            }
+        };
+    });
+
+    // ================= 联机网络 =================
+    function createRoom() {
+        cleanupOnline();
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+        document.getElementById('onlineContent').innerHTML = `<div class="hint">房间号</div><div class="room-code-display">${code}</div><div class="hint">等待对方加入...</div>`;
+        document.getElementById('roomInput').disabled = true;
+        myRole = 'A';
+
+        peer = new Peer(`sync4_${code}`);
+        peer.on('open', () => {});
+        peer.on('error', (err) => {
+            if (err.type === 'unavailable-id') createRoom();
+            else showToast('创建失败：' + err.type, 'error');
+        });
+        peer.on('connection', (c) => { conn = c; setupConn(); });
+    }
+
+    function joinRoom() {
+        const code = document.getElementById('roomInput').value.trim();
+        if (code.length !== 4) { showToast('请输入 4 位房间号', 'warn'); return; }
+        cleanupOnline();
+        myRole = 'B';
+        document.getElementById('onlineContent').innerHTML = `<div class="hint">正在连接房间 ${code}...</div>`;
+        document.getElementById('roomInput').disabled = true;
+
+        peer = new Peer();
+        peer.on('open', () => { conn = peer.connect(`sync4_${code}`); setupConn(); });
+        peer.on('error', () => {
+            showToast('连接失败，请检查房间号', 'error');
+            document.getElementById('onlineContent').innerHTML = `<button class="online-btn" onclick="createRoom()">创建房间</button>`;
+            document.getElementById('roomInput').disabled = false;
+        });
+    }
+
+    function setupConn() {
+        conn.on('open', () => {
+            isOnlineReady = true;
+            showToast('已连接！开始游戏', 'ok');
+            onlinePanel.classList.remove('active');
+            if (myRole === 'A') onlineNewGame();
+        });
+        conn.on('data', (data) => {
+            if (data.type === 'NEW_GAME') {
+                onlineState.category = { category: data.category, words: data.words };
+                currentCategory = onlineState.category;
+                currentPrompt = data.category;
+                promptWordEl.innerText = currentPrompt;
+                if (data.config) effectiveConfig = data.config;
+                currentRound = 1;
+                roundHistory = [];
+                historyContainer.innerHTML = '';
+                onlineStartRound();
+            } else if (data.type === 'NEW_ROUND') {
+                onlineState.category = { category: data.category, words: data.words };
+                currentCategory = onlineState.category;
+                currentPrompt = data.category;
+                promptWordEl.innerText = currentPrompt;
+                currentRound = data.round;
+                onlineStartRound();
+            } else if (data.type === 'SUBMIT') {
+                onlineState.opponentWord = data.word;
+                onlineState.opponentHasSubmitted = true;
+                if (myRole === 'A') { slotB.innerText = "已锁定"; slotB.classList.add('filled'); }
+                else { slotA.innerText = "已锁定"; slotA.classList.add('filled'); }
+                if (onlineState.iHaveSubmitted) onlineReveal();
+                else turnText.innerText = '对方已提交，等待你选择...';
+            } else if (data.type === 'RESTART') {
+                onlineNewGame();
+            }
+        });
+        conn.on('close', () => {
+            isOnlineReady = false;
+            stopTimerForState(onlineState);
+            actionArea.classList.remove('active');
+            showToast('对方已断开连接', 'warn');
+        });
+    }
+
+    function cleanupOnline() {
+        isOnlineReady = false;
+        if (conn) { try { conn.close(); } catch (e) {} conn = null; }
+        if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+    }
+
+    // ================= 事件绑定 =================
+    expandBtn.onclick = () => {
+        const stateObj = mode === 'local' ? localState : onlineState;
+        if (stateObj.timeLeft <= 0) return;
+        SFX.pop();
+        renderBubbles([...stateObj.category.words], stateObj);
+        expandBtn.style.display = 'none';
+    };
+
+    submitBtn.onclick = () => {
+        const stateObj = mode === 'local' ? localState : onlineState;
+        if (!stateObj.selectedWord) return;
+        if (mode === 'local') localSubmit(stateObj.selectedWord);
+        else onlineSubmit(stateObj.selectedWord);
+    };
+
+    function closeResultAndRestart() {
+        resultModal.classList.remove('show');
+        if (mode === 'local') {
+            localState.category = null;
+            currentCategory = null;
+            localNewRound(true);
+        } else {
+            if (myRole === 'A') onlineNewGame();
+            else if (conn && conn.open) conn.send({ type: 'RESTART' });
+        }
+    }
+
+    // ================= 初始化 =================
+    window.onload = () => {
+        loadSettings();
+        loadStats();
+        loadRecords();
+        updateStatsSummary();
+        updateSettingsUI();
+        localNewRound(true);
+    };
+</script>
+</body>
+</html>

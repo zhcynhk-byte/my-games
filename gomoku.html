@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>五子棋</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg: #f4ebe1;
+            --wood: #e9d8a6;
+            --line: #bc8a5f;
+            --dark: #5c3a1a;
+            --accent: #d4a373;
+        }
+        * { box-sizing: border-box; }
+        html, body {
+            -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+            touch-action: manipulation;
+        }
+        body {
+            background-color: var(--bg);
+            font-family: 'Microsoft YaHei', sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            min-height: 100vh; margin: 0; padding: 12px;
+            overflow-x: hidden;
+        }
+
+        h1 { color: #7f4f24; margin: 6px 0 10px; font-size: 22px; letter-spacing: 2px; }
+
+        /* ============ 战绩条 ============ */
+        #stats-bar {
+            font-size: 12px; color: #8a6a45;
+            margin-bottom: 10px; display: flex; gap: 14px;
+            cursor: pointer; padding: 4px 10px; border-radius: 14px;
+            background: rgba(188,138,95,0.12);
+            transition: background 0.2s;
+        }
+        #stats-bar:hover { background: rgba(188,138,95,0.22); }
+        #stats-bar .highlight { color: #b45309; font-weight: bold; }
+
+        /* ============ 模式选择 ============ */
+        .mode-tabs {
+            display: flex; gap: 8px; margin-bottom: 14px;
+            background: #e9d8a6; padding: 6px; border-radius: 10px;
+            border: 3px solid var(--line);
+        }
+        .mode-tab {
+            padding: 9px 16px; font-size: 14px; font-weight: bold;
+            border: none; border-radius: 8px; cursor: pointer;
+            background: transparent; color: #8a6a45; transition: 0.2s;
+        }
+        .mode-tab.active { background: var(--accent); color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+
+        /* ============ 状态条 ============ */
+        #status-bar {
+            display: flex; align-items: center; gap: 12px;
+            background: #fff; padding: 10px 18px; border-radius: 10px;
+            border: 2px solid var(--line); margin-bottom: 14px;
+            min-height: 48px; font-size: 15px; font-weight: bold; color: var(--dark);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        #status-dot {
+            width: 18px; height: 18px; border-radius: 50%;
+            background: #000; flex-shrink: 0;
+            transition: background 0.25s, box-shadow 0.25s;
+        }
+        #status-dot.white { background: #fff; border: 2px solid #999; box-shadow: 0 0 6px rgba(0,0,0,0.15); }
+        #status-dot.thinking {
+            background: #fbbf24 !important; border: none !important;
+            animation: dotPulse 0.8s ease-in-out infinite;
+        }
+        @keyframes dotPulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
+
+        /* ============ 棋盘 ============ */
+        #board-container {
+            position: relative;
+            background-color: var(--wood);
+            background-image: repeating-linear-gradient(
+                95deg, rgba(188,138,95,0.03) 0px, rgba(188,138,95,0.03) 2px,
+                transparent 2px, transparent 9px
+            );
+            border: 4px solid var(--line); border-radius: 10px;
+            box-shadow: 5px 5px 18px rgba(0,0,0,0.2), inset 0 0 25px rgba(140,90,45,0.12);
+            cursor: pointer;
+            touch-action: none;
+        }
+        canvas { display: block; border-radius: 6px; }
+
+        /* ============ 按钮区 ============ */
+        .btn-row {
+            display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; justify-content: center;
+        }
+        button.action {
+            padding: 10px 20px; font-size: 14px; font-weight: bold; cursor: pointer;
+            background: var(--accent); color: #fff; border: none; border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15); transition: 0.2s;
+        }
+        button.action:hover { background: var(--line); }
+        button.action:active { transform: scale(0.96); }
+        button.action:disabled { background: #c9b8a0; cursor: not-allowed; transform: none; }
+        button.action.ghost { background: #a89f91; }
+
+        /* ============ 联机大厅 ============ */
+        #lobby {
+            position: absolute; inset: 0;
+            background: rgba(244,235,225,0.97);
+            border-radius: 10px;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+            gap: 14px; padding: 24px; z-index: 100;
+        }
+        #lobby.show { display: flex; }
+        #lobby h3 { color: #7f4f24; margin: 0; font-size: 18px; }
+        #lobby .hint { font-size: 12px; color: #8a6a45; text-align: center; line-height: 1.6; }
+        .room-input {
+            padding: 12px; font-size: 22px; text-align: center; letter-spacing: 6px;
+            width: 160px; border: 2px solid var(--line); border-radius: 8px;
+            background: #fff; color: var(--dark); font-family: 'Courier New', monospace;
+            font-weight: bold; outline: none; text-transform: uppercase;
+        }
+        .room-input:focus { border-color: var(--accent); }
+        #room-code-display {
+            font-family: 'Courier New', monospace; font-weight: bold;
+            color: var(--accent); letter-spacing: 8px; font-size: 32px;
+        }
+        .lobby-btns { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+        /* ============ 结算弹窗 ============ */
+        #result-modal {
+            position: fixed; inset: 0;
+            background: rgba(49, 39, 28, 0.55);
+            display: none; align-items: center; justify-content: center;
+            z-index: 9000; backdrop-filter: blur(4px);
+        }
+        #result-modal.show { display: flex; }
+        .result-box {
+            background: #fff; padding: 30px 36px; border-radius: 16px;
+            text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+            animation: popIn 0.28s cubic-bezier(0.34,1.56,0.64,1);
+            max-width: 90vw;
+        }
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .result-box h2 { margin: 0 0 8px; color: var(--dark); font-size: 26px; }
+        .result-box p { color: #8a6a45; margin: 0 0 22px; font-size: 14px; }
+
+        /* ============ 统计面板 ============ */
+        #stats-modal {
+            position: fixed; inset: 0;
+            background: rgba(49, 39, 28, 0.55);
+            display: none; align-items: center; justify-content: center;
+            z-index: 9000; backdrop-filter: blur(4px);
+        }
+        #stats-modal.show { display: flex; }
+        .stats-box {
+            background: #fff; padding: 26px 30px; border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+            animation: popIn 0.28s cubic-bezier(0.34,1.56,0.64,1);
+            width: 320px; max-width: 90vw;
+        }
+        .stats-box h2 { margin: 0 0 18px; color: var(--dark); font-size: 20px; text-align: center; }
+        .stats-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            background: #fdf6ec; padding: 12px; border-radius: 10px;
+            text-align: center; border: 1px solid #f0e2b6;
+        }
+        .stat-label { font-size: 11px; color: #8a6a45; margin-bottom: 4px; }
+        .stat-value { font-size: 20px; font-weight: bold; color: var(--dark); font-family: 'Courier New', monospace; }
+        .stat-value.win { color: #16a34a; }
+        .stat-value.lose { color: #dc2626; }
+        .stat-value.rate { color: #d97706; }
+        .stats-foot {
+            display: flex; gap: 10px;
+        }
+        .stats-foot button { flex: 1; padding: 10px; font-size: 13px; }
+
+        /* ============ toast ============ */
+        #toast {
+            position: fixed; left: 50%; bottom: 60px;
+            transform: translateX(-50%) translateY(16px);
+            background: rgba(43,43,43,0.95); color: #fff;
+            padding: 10px 20px; border-radius: 20px; font-size: 13px;
+            opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s;
+            z-index: 9999; text-align: center; max-width: 88vw;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #toast.warn { color: #fbbf24; } #toast.error { color: #f87171; } #toast.ok { color: #4ade80; }
+
+        @media (max-width: 480px) {
+            h1 { font-size: 19px; margin-bottom: 8px; }
+            .mode-tab { padding: 8px 12px; font-size: 13px; }
+            #status-bar { font-size: 13px; padding: 8px 14px; min-height: 42px; }
+            .btn-row { gap: 8px; }
+            button.action { padding: 9px 16px; font-size: 13px; }
+            #stats-bar { font-size: 11px; gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>五子棋</h1>
+
+    <!-- 战绩条 -->
+    <div id="stats-bar" onclick="openStats()">
+        <span>人机战绩</span>
+        <span id="stats-summary">--</span>
+    </div>
+
+    <!-- 模式切换 -->
+    <div class="mode-tabs" id="mode-tabs">
+        <button class="mode-tab active" data-mode="ai">人机对战</button>
+        <button class="mode-tab" data-mode="local">双人同屏</button>
+        <button class="mode-tab" data-mode="online">异地联机</button>
+    </div>
+
+    <!-- 状态条 -->
+    <div id="status-bar">
+        <div id="status-dot"></div>
+        <span id="status-text">你的回合（黑子）</span>
+    </div>
+
+    <!-- 棋盘 -->
+    <div id="board-container">
+        <canvas id="boardCanvas"></canvas>
+        <div id="lobby">
+            <h3>异地联机</h3>
+            <div class="hint">一方创建房间，把 4 位房间号发给对方<br>对方输入后即可开始</div>
+            <div id="lobby-content">
+                <button class="action" onclick="createOnlineRoom()">创建房间</button>
+            </div>
+            <div class="lobby-btns">
+                <input type="text" class="room-input" id="roomInput" placeholder="0000" maxlength="4">
+                <button class="action" onclick="joinOnlineRoom()">加入</button>
+            </div>
+            <div class="lobby-btns">
+                <button class="action ghost" onclick="closeLobby()">返回</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 按钮 -->
+    <div class="btn-row">
+        <button class="action" id="restartBtn" onclick="restartGame()">重新开始</button>
+        <button class="action ghost" id="undoBtn" onclick="undoMove()">悔棋</button>
+    </div>
+
+    <!-- 结算 -->
+    <div id="result-modal">
+        <div class="result-box">
+            <h2 id="result-title">游戏结束</h2>
+            <p id="result-desc"></p>
+            <button class="action" onclick="restartGame()">再来一局</button>
+        </div>
+    </div>
+
+    <!-- 战绩统计 -->
+    <div id="stats-modal" onclick="if(event.target===this)closeStats()">
+        <div class="stats-box">
+            <h2>📊 人机对战统计</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">总场次</div>
+                    <div class="stat-value" id="stat-total">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">胜率</div>
+                    <div class="stat-value rate" id="stat-rate">0%</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">胜利</div>
+                    <div class="stat-value win" id="stat-win">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">失败</div>
+                    <div class="stat-value lose" id="stat-lose">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">当前连胜</div>
+                    <div class="stat-value" id="stat-streak">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">最长连胜</div>
+                    <div class="stat-value" id="stat-max-streak">0</div>
+                </div>
+            </div>
+            <div class="stats-foot">
+                <button class="action ghost" onclick="resetStats()">清空统计</button>
+                <button class="action" onclick="closeStats()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+<script>
+    // ================= 基础配置 =================
+    const BOARD_SIZE = 15;
+    let CELL_SIZE = 40;
+    let PADDING = 20;
+    let CANVAS_SIZE = 0;
+    const COLOR_BLACK = 1;
+    const COLOR_WHITE = 2;
+
+    // ================= 游戏状态 =================
+    let board = [];
+    let currentPlayer = COLOR_BLACK;
+    let isGameOver = false;
+    let mode = 'ai';
+    let history = [];
+    let lastMove = null;
+    let isAiThinking = false;
+    let isOnlineReady = false;
+    let onlineRole = null;
+    let myColor = COLOR_BLACK;
+
+    let peer = null;
+    let conn = null;
+
+    // ================= 统计系统 =================
+    const STATS_KEY = "gomoku_ai_stats_v1";
+    let stats = { total: 0, win: 0, lose: 0, draw: 0, streak: 0, maxStreak: 0 };
+
+    function loadStats() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(STATS_KEY) || "null");
+            if (saved && typeof saved === 'object') {
+                stats = { total: 0, win: 0, lose: 0, draw: 0, streak: 0, maxStreak: 0, ...saved };
+            }
+        } catch (e) {}
+    }
+    function saveStats() {
+        try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) {}
+    }
+    function recordGameResult(result) {
+        // result: 'win' | 'lose' | 'draw'
+        stats.total++;
+        if (result === 'win') {
+            stats.win++;
+            stats.streak++;
+            if (stats.streak > stats.maxStreak) stats.maxStreak = stats.streak;
+        } else if (result === 'lose') {
+            stats.lose++;
+            stats.streak = 0;
+        } else {
+            stats.draw++;
+            // 平局不打断连胜，但也不加
+        }
+        saveStats();
+        updateStatsSummary();
+    }
+    function updateStatsSummary() {
+        const el = document.getElementById('stats-summary');
+        if (stats.total === 0) {
+            el.innerHTML = `<span style="color:#a89f91;">暂无记录</span>`;
+            return;
+        }
+        const rate = Math.round((stats.win / stats.total) * 100);
+        el.innerHTML = `<span class="highlight">${stats.win}胜</span> ${stats.lose}负 · 胜率 ${rate}%`;
+    }
+
+    function openStats() {
+        initAudio();
+        document.getElementById('stat-total').innerText = stats.total;
+        document.getElementById('stat-win').innerText = stats.win;
+        document.getElementById('stat-lose').innerText = stats.lose;
+        document.getElementById('stat-streak').innerText = stats.streak;
+        document.getElementById('stat-max-streak').innerText = stats.maxStreak;
+        const rate = stats.total > 0 ? Math.round((stats.win / stats.total) * 100) : 0;
+        document.getElementById('stat-rate').innerText = rate + '%';
+        document.getElementById('stats-modal').classList.add('show');
+    }
+    function closeStats() {
+        document.getElementById('stats-modal').classList.remove('show');
+    }
+    function resetStats() {
+        if (!confirm('确定清空所有人机战绩吗？')) return;
+        stats = { total: 0, win: 0, lose: 0, draw: 0, streak: 0, maxStreak: 0 };
+        saveStats();
+        updateStatsSummary();
+        openStats();
+    }
+
+    // ================= DOM =================
+    const canvas = document.getElementById('boardCanvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status-text');
+    const statusDot = document.getElementById('status-dot');
+    const modelTabs = document.getElementById('mode-tabs');
+    const lobby = document.getElementById('lobby');
+    const resultModal = document.getElementById('result-modal');
+    const undoBtn = document.getElementById('undoBtn');
+
+    // ================= 尺寸自适应 =================
+    function computeBoardSize() {
+        const isMobile = window.innerWidth <= 600;
+        let maxW = isMobile ? window.innerWidth - 32 - 8 : Math.min(window.innerWidth * 0.55, 640);
+        CELL_SIZE = Math.floor(maxW / BOARD_SIZE);
+        CELL_SIZE = Math.max(22, Math.min(42, CELL_SIZE));
+        PADDING = Math.floor(CELL_SIZE * 0.55);
+        CANVAS_SIZE = BOARD_SIZE * CELL_SIZE + PADDING * 2;
+
+        canvas.width = CANVAS_SIZE;
+        canvas.height = CANVAS_SIZE;
+        canvas.style.width = CANVAS_SIZE + 'px';
+        canvas.style.height = CANVAS_SIZE + 'px';
+    }
+
+    // ================= 音效 =================
+    let audioCtx = null;
+    function initAudio() {
+        if (!audioCtx) {
+            try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+        }
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    }
+    function playTone(freq, type, duration, vol = 0.1) {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + duration);
+    }
+    const SFX = {
+        place: () => playTone(620, 'triangle', 0.07, 0.09),
+        win: () => {
+            playTone(523, 'sine', 0.15, 0.1);
+            setTimeout(() => playTone(659, 'sine', 0.15, 0.1), 120);
+            setTimeout(() => playTone(784, 'sine', 0.4, 0.12), 240);
+        },
+        lose: () => {
+            playTone(400, 'sine', 0.2, 0.08);
+            setTimeout(() => playTone(300, 'sine', 0.3, 0.08), 150);
+        },
+        invalid: () => playTone(240, 'square', 0.08, 0.05)
+    };
+
+    function vibrate(pattern) {
+        if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+    }
+
+    function showToast(msg, type = '') {
+        const t = document.getElementById('toast');
+        t.innerText = msg;
+        t.className = type;
+        t.classList.add('show');
+        clearTimeout(t._t);
+        t._t = setTimeout(() => t.classList.remove('show'), 1800);
+    }
+
+    // ================= 渲染 =================
+    function drawBoard() {
+        ctx.fillStyle = "#e9d8a6";
+        ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+        ctx.strokeStyle = "#bc8a5f";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < BOARD_SIZE; i++) {
+            const pos = PADDING + i * CELL_SIZE;
+            ctx.beginPath();
+            ctx.moveTo(PADDING, pos); ctx.lineTo(CANVAS_SIZE - PADDING, pos); ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pos, PADDING); ctx.lineTo(pos, CANVAS_SIZE - PADDING); ctx.stroke();
+        }
+
+        const stars = [[3,3],[3,11],[11,3],[11,11],[7,7]];
+        ctx.fillStyle = "#7f4f24";
+        stars.forEach(([x, y]) => {
+            ctx.beginPath();
+            ctx.arc(PADDING + x * CELL_SIZE, PADDING + y * CELL_SIZE, Math.max(2, CELL_SIZE * 0.09), 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] !== 0) drawPiece(r, c, board[r][c]);
+            }
+        }
+
+        if (lastMove) {
+            const x = PADDING + lastMove.c * CELL_SIZE;
+            const y = PADDING + lastMove.r * CELL_SIZE;
+            ctx.fillStyle = "#ef4444";
+            ctx.beginPath();
+            ctx.arc(x, y, Math.max(3, CELL_SIZE * 0.12), 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    function drawPiece(r, c, player) {
+        const x = PADDING + c * CELL_SIZE;
+        const y = PADDING + r * CELL_SIZE;
+        const radius = CELL_SIZE * 0.4;
+
+        ctx.beginPath();
+        ctx.arc(x + 1.5, y + 1.5, radius, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(0,0,0,0.25)";
+        ctx.fill();
+
+        const grad = ctx.createRadialGradient(
+            x - radius * 0.35, y - radius * 0.35, radius * 0.15,
+            x, y, radius
+        );
+        if (player === COLOR_BLACK) {
+            grad.addColorStop(0, "#5a5a5a");
+            grad.addColorStop(1, "#000");
+        } else {
+            grad.addColorStop(0, "#ffffff");
+            grad.addColorStop(1, "#c8c8c8");
+        }
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+    }
+
+    // ================= 状态显示 =================
+    function updateStatus() {
+        if (mode === 'online') {
+            if (!isOnlineReady) {
+                statusDot.style.background = '#999';
+                statusDot.className = '';
+                statusText.innerText = '等待联机...';
+                undoBtn.disabled = true;
+                return;
+            }
+            if (isGameOver) {
+                statusText.innerText = '游戏结束';
+                undoBtn.disabled = true;
+                return;
+            }
+            if (isAiThinking) {
+                statusDot.className = 'thinking';
+                statusText.innerText = '对方思考中...';
+                undoBtn.disabled = true;
+                return;
+            }
+            const isMyTurn = currentPlayer === myColor;
+            statusDot.className = currentPlayer === COLOR_BLACK ? '' : 'white';
+            statusText.innerText = isMyTurn
+                ? `你的回合（${myColor === COLOR_BLACK ? '黑子' : '白子'}）`
+                : '等待对方落子...';
+            undoBtn.disabled = !isMyTurn || history.length < 2;
+            return;
+        }
+
+        if (isGameOver) {
+            statusText.innerText = '游戏结束';
+            undoBtn.disabled = true;
+            return;
+        }
+        if (isAiThinking) {
+            statusDot.className = 'thinking';
+            statusText.innerText = 'AI 思考中...';
+            undoBtn.disabled = true;
+            return;
+        }
+        statusDot.className = currentPlayer === COLOR_BLACK ? '' : 'white';
+        if (mode === 'ai') {
+            statusText.innerText = currentPlayer === COLOR_BLACK ? '你的回合（黑子）' : 'AI 回合（白子）';
+            undoBtn.disabled = currentPlayer !== COLOR_BLACK || history.length < 2;
+        } else {
+            statusText.innerText = currentPlayer === COLOR_BLACK ? '黑方回合' : '白方回合';
+            undoBtn.disabled = history.length < 2;
+        }
+    }
+
+    // ================= 落子 =================
+    function placeStone(r, c, player) {
+        board[r][c] = player;
+        history.push({ r, c, player });
+        lastMove = { r, c };
+        drawBoard();
+        SFX.place();
+        vibrate(8);
+
+        const win = checkWin(r, c, player);
+        if (win) {
+            isGameOver = true;
+            SFX.win();
+            vibrate([40, 60, 120]);
+            setTimeout(() => showResult(player), 200);
+            return true;
+        }
+
+        if (history.length === BOARD_SIZE * BOARD_SIZE) {
+            isGameOver = true;
+            setTimeout(() => showResult(0), 200);
+            return true;
+        }
+
+        currentPlayer = player === COLOR_BLACK ? COLOR_WHITE : COLOR_BLACK;
+        updateStatus();
+        return false;
+    }
+
+    function showResult(winner) {
+        let title, desc;
+
+        // 记录战绩：仅人机模式
+        if (mode === 'ai') {
+            if (winner === 0) {
+                recordGameResult('draw');
+                title = '平局';
+                desc = '棋盘满了，势均力敌';
+            } else if (winner === COLOR_BLACK) {
+                recordGameResult('win');
+                SFX.win();
+                title = '你赢了！';
+                desc = '点击下方按钮再来一局';
+            } else {
+                recordGameResult('lose');
+                SFX.lose();
+                title = 'AI 获胜';
+                desc = '再试一次吧';
+            }
+        } else if (mode === 'local') {
+            title = winner === COLOR_BLACK ? '黑方获胜' : '白方获胜';
+            desc = '点击下方按钮再来一局';
+        } else {
+            title = winner === myColor ? '你赢了！' : '对方获胜';
+            desc = '点击下方按钮再来一局';
+        }
+
+        document.getElementById('result-title').innerText = title;
+        document.getElementById('result-desc').innerText = desc;
+        resultModal.classList.add('show');
+    }
+
+    // ================= 胜负判定 =================
+    function checkWin(r, c, player) {
+        const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+        for (const [dr, dc] of dirs) {
+            let count = 1;
+            let nr = r + dr, nc = c + dc;
+            while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                count++; nr += dr; nc += dc;
+            }
+            nr = r - dr; nc = c - dc;
+            while (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                count++; nr -= dr; nc -= dc;
+            }
+            if (count >= 5) return true;
+        }
+        return false;
+    }
+
+    // ================= 交互 =================
+    function handleCanvasClick(clientX, clientY) {
+        if (isGameOver || isAiThinking) return;
+        if (mode === 'online' && (!isOnlineReady || currentPlayer !== myColor)) return;
+        if (mode === 'ai' && currentPlayer !== COLOR_BLACK) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const x = (clientX - rect.left) * scaleX;
+        const y = (clientY - rect.top) * scaleY;
+
+        const c = Math.round((x - PADDING) / CELL_SIZE);
+        const r = Math.round((y - PADDING) / CELL_SIZE);
+
+        if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) return;
+        if (board[r][c] !== 0) return;
+
+        initAudio();
+        const player = currentPlayer;
+        const ended = placeStone(r, c, player);
+
+        if (mode === 'online' && conn && conn.open) {
+            conn.send({ type: 'MOVE', r, c, player });
+        }
+
+        if (!ended && mode === 'ai' && currentPlayer === COLOR_WHITE) {
+            triggerAiMove();
+        }
+    }
+
+    canvas.addEventListener('click', (e) => handleCanvasClick(e.clientX, e.clientY));
+
+    // ================= AI =================
+    function triggerAiMove() {
+        isAiThinking = true;
+        updateStatus();
+        setTimeout(() => {
+            if (isGameOver) { isAiThinking = false; updateStatus(); return; }
+            const move = getBestAiMove();
+            isAiThinking = false;
+            if (move) placeStone(move.r, move.c, COLOR_WHITE);
+            updateStatus();
+        }, 50);
+    }
+
+    function getBestAiMove() {
+        if (history.length === 0) return { r: 7, c: 7 };
+
+        const candidates = getCandidates();
+        let bestScore = -Infinity;
+        let bestMove = null;
+
+        for (const move of candidates) {
+            board[move.r][move.c] = COLOR_WHITE;
+            const score = minimax(3, -Infinity, Infinity, false);
+            board[move.r][move.c] = 0;
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = move;
+            }
+        }
+        return bestMove || candidates[0];
+    }
+
+    function getCandidates() {
+        const candidates = [];
+        const visited = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(false));
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] !== 0) {
+                    for (let i = -2; i <= 2; i++) {
+                        for (let j = -2; j <= 2; j++) {
+                            const nr = r + i, nc = c + j;
+                            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE
+                                && board[nr][nc] === 0 && !visited[nr][nc]) {
+                                visited[nr][nc] = true;
+                                candidates.push({ r: nr, c: nc });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return candidates;
+    }
+
+    function minimax(depth, alpha, beta, isMaximizing) {
+        const scoreNow = evaluateBoard();
+        if (depth === 0 || Math.abs(scoreNow) >= 100000) return scoreNow;
+
+        const candidates = getCandidates();
+        if (isMaximizing) {
+            let maxEval = -Infinity;
+            for (const move of candidates) {
+                board[move.r][move.c] = COLOR_WHITE;
+                const val = minimax(depth - 1, alpha, beta, false);
+                board[move.r][move.c] = 0;
+                maxEval = Math.max(maxEval, val);
+                alpha = Math.max(alpha, val);
+                if (beta <= alpha) break;
+            }
+            return maxEval;
+        } else {
+            let minEval = Infinity;
+            for (const move of candidates) {
+                board[move.r][move.c] = COLOR_BLACK;
+                const val = minimax(depth - 1, alpha, beta, true);
+                board[move.r][move.c] = 0;
+                minEval = Math.min(minEval, val);
+                beta = Math.min(beta, val);
+                if (beta <= alpha) break;
+            }
+            return minEval;
+        }
+    }
+
+    function evaluateBoard() {
+        let score = 0;
+        const dirs = [[0,1],[1,0],[1,1],[1,-1]];
+        for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] === 0) continue;
+                const player = board[r][c];
+                const sign = player === COLOR_WHITE ? 1 : -1.2;
+                for (const [dr, dc] of dirs) {
+                    const prevR = r - dr, prevC = c - dc;
+                    if (prevR >= 0 && prevR < BOARD_SIZE && prevC >= 0 && prevC < BOARD_SIZE && board[prevR][prevC] === player) continue;
+
+                    let count = 0, curR = r, curC = c;
+                    while (curR >= 0 && curR < BOARD_SIZE && curC >= 0 && curC < BOARD_SIZE && board[curR][curC] === player) {
+                        count++; curR += dr; curC += dc;
+                    }
+                    const blocked1 = !(curR >= 0 && curR < BOARD_SIZE && curC >= 0 && curC < BOARD_SIZE) || board[curR][curC] !== 0;
+                    const blocked2 = !(prevR >= 0 && prevR < BOARD_SIZE && prevC >= 0 && prevC < BOARD_SIZE) || board[prevR][prevC] !== 0;
+
+                    let s = 0;
+                    if (count >= 5) s = 100000;
+                    else if (count === 4) s = (blocked1 && blocked2) ? 0 : (blocked1 || blocked2 ? 1000 : 10000);
+                    else if (count === 3) s = (blocked1 && blocked2) ? 0 : (blocked1 || blocked2 ? 100 : 1000);
+                    else if (count === 2) s = (blocked1 && blocked2) ? 0 : (blocked1 || blocked2 ? 10 : 100);
+                    else if (count === 1) s = 1;
+                    score += s * sign;
+                }
+            }
+        }
+        return score;
+    }
+
+    // ================= 悔棋 =================
+    function undoMove() {
+        if (isGameOver || isAiThinking) return;
+        if (mode === 'online' && !isOnlineReady) return;
+
+        if (mode === 'ai') {
+            if (history.length < 2) return;
+            const aiMove = history.pop();
+            board[aiMove.r][aiMove.c] = 0;
+            const playerMove = history.pop();
+            board[playerMove.r][playerMove.c] = 0;
+            currentPlayer = COLOR_BLACK;
+        } else {
+            if (history.length < 1) return;
+            const last = history.pop();
+            board[last.r][last.c] = 0;
+            currentPlayer = last.player;
+        }
+
+        lastMove = history.length > 0 ? { r: history[history.length - 1].r, c: history[history.length - 1].c } : null;
+        drawBoard();
+        updateStatus();
+
+        if (mode === 'online' && conn && conn.open) {
+            conn.send({ type: 'UNDO' });
+        }
+    }
+
+    // ================= 重开 =================
+    function restartGame() {
+        resultModal.classList.remove('show');
+        board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+        history = [];
+        lastMove = null;
+        isGameOver = false;
+        isAiThinking = false;
+        currentPlayer = COLOR_BLACK;
+
+        if (mode === 'online') {
+            myColor = onlineRole === 'host' ? COLOR_BLACK : COLOR_WHITE;
+            currentPlayer = COLOR_BLACK;
+        }
+
+        drawBoard();
+        updateStatus();
+
+        if (mode === 'online' && conn && conn.open) {
+            conn.send({ type: 'RESTART' });
+        }
+    }
+
+    // ================= 模式切换 =================
+    function switchMode(newMode) {
+        if (mode === newMode) return;
+        if (mode === 'online' && newMode !== 'online') cleanupOnline();
+
+        mode = newMode;
+        document.querySelectorAll('.mode-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.mode === mode);
+        });
+
+        lobby.classList.remove('show');
+        restartGame();
+
+        if (mode === 'online') {
+            lobby.classList.add('show');
+            isOnlineReady = false;
+            updateStatus();
+        }
+    }
+
+    modelTabs.addEventListener('click', (e) => {
+        const tab = e.target.closest('.mode-tab');
+        if (!tab) return;
+        initAudio();
+        switchMode(tab.dataset.mode);
+    });
+
+    // ================= 联机 =================
+    function closeLobby() {
+        lobby.classList.remove('show');
+        cleanupOnline();
+        switchMode('ai');
+    }
+
+    function cleanupOnline() {
+        isOnlineReady = false;
+        if (conn) { try { conn.close(); } catch (e) {} conn = null; }
+        if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+        onlineRole = null;
+        document.getElementById('lobby-content').innerHTML = `<button class="action" onclick="createOnlineRoom()">创建房间</button>`;
+        document.getElementById('roomInput').value = '';
+        document.getElementById('roomInput').disabled = false;
+    }
+
+    function createOnlineRoom() {
+        cleanupOnline();
+        onlineRole = 'host';
+        myColor = COLOR_BLACK;
+
+        const roomCode = Math.floor(1000 + Math.random() * 9000).toString();
+        document.getElementById('lobby-content').innerHTML = `
+            <div class="hint">房间号</div>
+            <div id="room-code-display">${roomCode}</div>
+            <div class="hint">等待对方加入...</div>
+        `;
+        document.getElementById('roomInput').disabled = true;
+
+        peer = new Peer(`gomoku_${roomCode}`);
+        peer.on('open', () => {});
+        peer.on('error', (err) => {
+            if (err.type === 'unavailable-id') createOnlineRoom();
+            else showToast('创建失败：' + err.type, 'error');
+        });
+        peer.on('connection', (connection) => {
+            conn = connection;
+            setupConnection();
+        });
+    }
+
+    function joinOnlineRoom() {
+        const input = document.getElementById('roomInput');
+        const roomCode = input.value.trim();
+        if (roomCode.length !== 4) {
+            showToast('请输入 4 位房间号', 'warn');
+            return;
+        }
+
+        cleanupOnline();
+        onlineRole = 'join';
+        myColor = COLOR_WHITE;
+
+        document.getElementById('lobby-content').innerHTML = `<div class="hint">正在连接房间 ${roomCode}...</div>`;
+        input.disabled = true;
+
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect(`gomoku_${roomCode}`);
+            setupConnection();
+        });
+        peer.on('error', () => {
+            showToast('连接失败，请检查房间号', 'error');
+            document.getElementById('lobby-content').innerHTML = `<button class="action" onclick="createOnlineRoom()">创建房间</button>`;
+            input.disabled = false;
+        });
+    }
+
+    function setupConnection() {
+        conn.on('open', () => {
+            isOnlineReady = true;
+            lobby.classList.remove('show');
+            showToast('已连接！', 'ok');
+
+            myColor = onlineRole === 'host' ? COLOR_BLACK : COLOR_WHITE;
+            currentPlayer = COLOR_BLACK;
+
+            restartGame();
+            updateStatus();
+        });
+
+        conn.on('data', (data) => {
+            if (data.type === 'MOVE') {
+                if (board[data.r] && board[data.r][data.c] === 0) {
+                    isAiThinking = false;
+                    placeStone(data.r, data.c, data.player);
+                }
+            } else if (data.type === 'UNDO') {
+                if (history.length >= 1) {
+                    const last = history.pop();
+                    board[last.r][last.c] = 0;
+                    currentPlayer = last.player;
+                    lastMove = history.length > 0 ? { r: history[history.length - 1].r, c: history[history.length - 1].c } : null;
+                    drawBoard();
+                    updateStatus();
+                }
+            } else if (data.type === 'RESTART') {
+                const wasReady = isOnlineReady;
+                isOnlineReady = false;
+                restartGame();
+                isOnlineReady = wasReady;
+                updateStatus();
+            }
+        });
+
+        conn.on('close', () => {
+            isOnlineReady = false;
+            showToast('对方已断开连接', 'warn');
+            switchMode('ai');
+        });
+
+        conn.on('error', (err) => console.error('连接错误:', err));
+    }
+
+    // ================= 尺寸变化 =================
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            computeBoardSize();
+            drawBoard();
+        }, 150);
+    });
+
+    // ================= 初始化 =================
+    window.onload = () => {
+        computeBoardSize();
+        board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+        loadStats();
+        updateStatsSummary();
+        drawBoard();
+        updateStatus();
+    };
+</script>
+</body>
+</html>

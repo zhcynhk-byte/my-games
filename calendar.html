@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>日历拼图</title>
+    <style>
+        html, body {
+            overscroll-behavior: none;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        body {
+            background-color: #f4ebe1;
+            font-family: 'Microsoft YaHei', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 10px;
+            padding-bottom: 40vh;
+            box-sizing: border-box;
+            overflow-x: hidden;
+        }
+        
+        /* ============ Header 两行布局 ============ */
+        .header { 
+            display: flex; flex-direction: column; gap: 10px;
+            background: #e9d8a6; padding: 12px 15px; border-radius: 10px; border: 4px solid #bc8a5f;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            width: 100%; max-width: 800px; box-sizing: border-box; margin-bottom: 15px;
+        }
+        .header-row1 {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        }
+        .header-row2 {
+            display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+        }
+        h1 { color: #7f4f24; font-size: 20px; margin: 0; letter-spacing: 2px; }
+        
+        .date-picker-group {
+            display: flex; gap: 5px; align-items: center; background: #fff; padding: 5px 10px; border-radius: 5px; border: 1px solid #bc8a5f;
+        }
+        input[type="date"] { font-size: 14px; color: #7f4f24; border: none; outline: none; background: transparent; font-family: inherit; }
+
+        button {
+            padding: 8px 14px; font-size: 14px; cursor: pointer; background-color: #d4a373; color: white; border: none; border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2); transition: 0.2s;
+        }
+        button:hover { background-color: #bc8a5f; }
+        button:active { transform: scale(0.95); }
+        button:disabled { background: #b4aca0; cursor: not-allowed; transform: none; }
+        
+        .timer-panel {
+            display: flex; flex-direction: column; align-items: center; background: #2b2b2b; color: #4ade80;
+            padding: 5px 15px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; font-weight: bold;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8); min-width: 110px;
+        }
+        .timer-title { font-size: 10px; color: #a3a3a3; letter-spacing: 1px; margin-bottom: 2px; }
+        .timer-display { font-size: 18px; letter-spacing: 1px; }
+        .best-record { font-size: 10px; color: #fbbf24; margin-top: 2px; height: 12px; }
+
+        /* ============ 主区域 ============ */
+        .main-container {
+            display: flex; gap: 20px; align-items: flex-start; justify-content: center; width: 100%; max-width: 1200px;
+        }
+
+        #board-wrapper {
+            position: relative; 
+            /* 尺寸由 JS 动态设置 */
+            background-color: #e9d8a6;
+            background-image: repeating-linear-gradient(
+                92deg, rgba(188,138,95,0.03) 0px, rgba(188,138,95,0.03) 2px,
+                transparent 2px, transparent 8px
+            );
+            border: 4px solid #bc8a5f;
+            border-radius: 8px; overflow: hidden; 
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.2), inset 0 0 20px rgba(140,90,45,0.15);
+            flex-shrink: 0;
+        }
+        .cell {
+            position: absolute; box-sizing: border-box;
+            border: 1px solid rgba(188, 138, 95, 0.4); background-color: #f0e2b6;
+            display: flex; justify-content: center; align-items: center; font-size: 12px; color: #7f4f24; font-weight: bold; text-align: center;
+        }
+        .target { 
+            background-color: #fff; border: 2px dashed #bc6c25; color: #bc6c25; z-index: 2; 
+            animation: targetPulse 0.6s ease-out;
+        }
+        @keyframes targetPulse {
+            0% { box-shadow: 0 0 0 0 rgba(188,108,37,0.6); }
+            100% { box-shadow: 0 0 0 12px rgba(188,108,37,0); }
+        }
+        .small-text { font-size: 10px; }
+        .vertical-text { writing-mode: vertical-lr; font-size: 12px; letter-spacing: 1px;}
+        .blank-board { background-color: #e9d8a6; font-size: 10px; color: #bc8a5f; border: 1px solid rgba(0,0,0,0.05); }
+        .blank-top { background-color: #e9d8a6; border: 1px solid rgba(0,0,0,0.05); }
+        
+        .preview {
+            position: absolute; background-color: rgba(100, 255, 100, 0.4); border: 2px solid #0a0;
+            box-sizing: border-box; z-index: 5; pointer-events: none;
+        }
+
+        /* ============ 果冻质感拼图块 ============ */
+        .piece { 
+            cursor: grab; 
+            z-index: 10; 
+            touch-action: none; 
+        }
+        .piece-block {
+            position: absolute; box-sizing: border-box;
+            border: 1px solid rgba(0,0,0,0.22);
+            border-radius: 6px;
+            box-shadow: 
+                inset 0 2px 4px rgba(255,255,255,0.55),
+                inset 0 -3px 6px rgba(0,0,0,0.2),
+                0 0 8px var(--glow-color, transparent),
+                1px 1px 3px rgba(0,0,0,0.25);
+        }
+        /* 落位弹跳动画 */
+        .piece-just-placed {
+            animation: placeBounce 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes placeBounce {
+            0% { transform: scale(1.08); }
+            100% { transform: scale(1); }
+        }
+
+        #pool-area {
+            flex-grow: 1; max-width: 700px; min-height: 360px;
+            background-color: #e9d8a6; 
+            background-image: repeating-linear-gradient(
+                92deg, rgba(188,138,95,0.03) 0px, rgba(188,138,95,0.03) 2px,
+                transparent 2px, transparent 8px
+            );
+            border: 4px solid #bc8a5f; border-radius: 8px;
+            padding: 15px; box-sizing: border-box; box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+            display: flex; flex-wrap: wrap; align-content: flex-start; gap: 20px;
+            touch-action: pan-y; 
+        }
+        
+        #drag-ghost { position: fixed; pointer-events: none; z-index: 9999; opacity: 0.85; transform: scale(0.95); }
+
+        /* 校验错误提示条 */
+        #validation-bar {
+            display: none;
+            width: 100%; max-width: 800px;
+            background: #fecaca; color: #991b1b;
+            border: 2px solid #f87171; border-radius: 8px;
+            padding: 10px 15px; margin-bottom: 15px;
+            font-size: 13px; line-height: 1.6; box-sizing: border-box;
+        }
+        #validation-bar.show { display: block; }
+        #validation-bar strong { display: block; margin-bottom: 4px; }
+
+        /* toast */
+        #toast {
+            position: fixed;
+            left: 50%; bottom: 100px;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(43, 43, 43, 0.95);
+            color: #4ade80;
+            padding: 10px 20px;
+            border-radius: 24px;
+            font-size: 14px;
+            font-weight: bold;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s, transform 0.25s;
+            z-index: 10000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            max-width: 90vw; text-align: center;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        #toast.warn { color: #fbbf24; }
+        #toast.error { color: #f87171; }
+
+        /* ============ 设置面板 ============ */
+        #settings-overlay {
+            position: fixed; inset: 0;
+            background: rgba(43, 43, 43, 0.75);
+            backdrop-filter: blur(4px);
+            display: none; align-items: center; justify-content: center;
+            z-index: 9000;
+        }
+        #settings-overlay.show { display: flex; }
+        .settings-panel {
+            background: #f4ebe1; border-radius: 14px;
+            width: 300px; max-width: 90vw;
+            padding: 22px; box-sizing: border-box;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+            animation: panelIn 0.2s ease-out;
+        }
+        @keyframes panelIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .settings-title {
+            color: #7f4f24; font-size: 18px; font-weight: bold;
+            text-align: center; margin-bottom: 18px;
+        }
+        .toggle-row {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 0; font-size: 14px; color: #5c3a1a;
+        }
+        .toggle-row + .toggle-row { border-top: 1px solid rgba(188,138,95,0.2); }
+        .toggle {
+            position: relative; width: 46px; height: 24px; border-radius: 12px;
+            background: #c9b8a0; cursor: pointer; transition: 0.2s; flex-shrink: 0;
+        }
+        .toggle::after {
+            content: ""; position: absolute; top: 3px; left: 3px;
+            width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .toggle.on { background: #2a9d8f; }
+        .toggle.on::after { left: 25px; }
+        .toggle.disabled { opacity: 0.4; pointer-events: none; }
+        .settings-footer {
+            display: flex; gap: 10px; margin-top: 20px;
+        }
+        .settings-footer button { flex: 1; }
+
+        @media (max-width: 800px) {
+            .main-container { flex-direction: column; align-items: center; gap: 15px; }
+            #pool-area { width: 100%; max-width: 100%; min-height: 250px;}
+            h1 { font-size: 18px; }
+            .timer-panel { padding: 4px 12px; min-width: 95px; }
+            .timer-display { font-size: 16px; }
+            .header-row1 { flex-wrap: wrap; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-row1">
+            <h1>日历拼图</h1>
+            <div class="date-picker-group">
+                <label for="dateInput" style="color: #7f4f24; font-weight: bold; font-size: 12px;">日期：</label>
+                <input type="date" id="dateInput">
+            </div>
+        </div>
+        <div class="header-row2">
+            <div class="timer-panel">
+                <div class="timer-title">⏱ 计时器</div>
+                <div class="timer-display" id="timerDisplay">00:00.0</div>
+                <div class="best-record" id="bestRecord">当日最佳: --</div>
+            </div>
+            <button onclick="autoSolve()">自动拼图</button>
+            <button onclick="undoLast()" id="undoBtn" disabled>撤销</button>
+            <button onclick="resetGame()" style="background-color: #a89f91;">重置</button>
+            <button onclick="openSettings()" style="background-color: #8b7355;">⚙️</button>
+        </div>
+    </div>
+
+    <div id="validation-bar"></div>
+
+    <div class="main-container">
+        <div id="board-wrapper"></div>
+        <div id="pool-area"></div>
+    </div>
+
+    <div id="toast">已撤销一步</div>
+
+    <!-- 设置面板 -->
+    <div id="settings-overlay" onclick="if(event.target===this)closeSettings()">
+        <div class="settings-panel">
+            <div class="settings-title">⚙️ 设置</div>
+            <div class="toggle-row">
+                <span>主音量</span>
+                <div class="toggle" id="toggle-master" onclick="toggleSetting('master')"></div>
+            </div>
+            <div class="toggle-row">
+                <span>操作音效</span>
+                <div class="toggle" id="toggle-sfx" onclick="toggleSetting('sfx')"></div>
+            </div>
+            <div class="toggle-row">
+                <span>震动反馈</span>
+                <div class="toggle" id="toggle-vibrate" onclick="toggleSetting('vibrate')"></div>
+            </div>
+            <div class="settings-footer">
+                <button onclick="resetSettings()" style="background-color: #a89f91;">恢复默认</button>
+                <button onclick="closeSettings()">完成</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+    // ================= 配置 =================
+    const ROWS = 8;
+    const COLS = 7;
+    let SIZE = 50; // 动态计算
+
+    const pieceColors = [
+        "#f4a261", "#e76f51", "#e9c46a", "#2a9d8f", "#a8dadc", 
+        "#b5838d", "#f6bd60", "#84a59d", "#f28482", "#b56576"
+    ];
+    // 每个颜色对应的发光色（取近似但更亮的版本）
+    const pieceGlows = [
+        "rgba(244,162,97,0.5)", "rgba(231,111,81,0.5)", "rgba(233,196,106,0.5)",
+        "rgba(42,157,143,0.5)", "rgba(168,218,220,0.5)", "rgba(181,131,141,0.5)",
+        "rgba(246,189,96,0.5)", "rgba(132,165,157,0.5)", "rgba(242,132,130,0.5)",
+        "rgba(181,101,118,0.5)"
+    ];
+
+    const boardTemplate = [
+        {x:0,y:0,t:"1月",s:1}, {x:1,y:0,t:"2月",s:1}, {x:2,y:0,t:"3月",s:1}, {x:3,y:0,t:"4月",s:1}, {x:4,y:0,t:"5月",s:1}, {x:5,y:0,t:"6月",s:1}, {x:6,y:0,t:"",s:4},
+        {x:0,y:1,t:"7月",s:1}, {x:1,y:1,t:"8月",s:1}, {x:2,y:1,t:"9月",s:1}, {x:3,y:1,t:"10月",s:1}, {x:4,y:1,t:"11月",s:1}, {x:5,y:1,t:"12月",s:1}, {x:6,y:1,t:"",s:4},
+        {x:0,y:2,t:"1日",s:1}, {x:1,y:2,t:"2日",s:1}, {x:2,y:2,t:"3日",s:1}, {x:3,y:2,t:"4日",s:1}, {x:4,y:2,t:"5日",s:1}, {x:5,y:2,t:"6日",s:1}, {x:6,y:2,t:"7日",s:1},
+        {x:0,y:3,t:"8日",s:1}, {x:1,y:3,t:"9日",s:1}, {x:2,y:3,t:"10日",s:1}, {x:3,y:3,t:"11日",s:1}, {x:4,y:3,t:"12日",s:1}, {x:5,y:3,t:"13日",s:1}, {x:6,y:3,t:"14日",s:1},
+        {x:0,y:4,t:"15日",s:1}, {x:1,y:4,t:"16日",s:1}, {x:2,y:4,t:"17日",s:1}, {x:3,y:4,t:"18日",s:1}, {x:4,y:4,t:"19日",s:1}, {x:5,y:4,t:"20日",s:1}, {x:6,y:4,t:"21日",s:1},
+        {x:0,y:5,t:"22日",s:1}, {x:1,y:5,t:"23日",s:1}, {x:2,y:5,t:"24日",s:1}, {x:3,y:5,t:"25日",s:1}, {x:4,y:5,t:"26日",s:1}, {x:5,y:5,t:"27日",s:1}, {x:6,y:5,t:"28日",s:1},
+        {x:0,y:6,t:"29日",s:1}, {x:1,y:6,t:"30日",s:1}, {x:2,y:6,t:"31日",s:1}, {x:3,y:6,t:"星期日",s:1}, {x:4,y:6,t:"星期一",s:1}, {x:5,y:6,t:"星期二",s:1}, {x:6,y:6,t:"星期三",s:1},
+        {x:0,y:7,t:"",s:3}, {x:1,y:7,t:"",s:3}, {x:2,y:7,t:"",s:3}, {x:3,y:7,t:"",s:4}, {x:4,y:7,t:"星期四",s:1}, {x:5,y:7,t:"星期五",s:1}, {x:6,y:7,t:"星期六",s:1}
+    ];
+
+    const rawPieces = [
+        [[0,0], [0,1], [0,2], [1,1], [2,1]],
+        [[0,0], [1,0], [1,1], [2,1]],
+        [[0,0], [0,1], [1,1], [2,1], [2,2]],
+        [[0,0], [1,0], [2,0], [3,0]],
+        [[0,2], [1,0], [1,1], [1,2]],
+        [[0,0], [1,0], [2,0], [2,1], [2,2]],
+        [[0,1], [0,2], [0,3], [1,0], [1,1]],
+        [[0,1], [0,2], [1,0], [1,1], [1,2]],
+        [[0,3], [1,0], [1,1], [1,2], [1,3]],
+        [[0,0], [0,1], [0,2], [1,0], [1,2]]
+    ];
+
+    let boardState = []; 
+    let pieces = [];     
+    let dragOffset = { x: 0, y: 0 };
+    let currentLayout = []; 
+    let isAutoSolving = false; 
+
+    let timerInterval = null;
+    let startTime = 0;
+    let elapsedTime = 0;
+    let isTimerRunning = false;
+    let placedCount = 0; 
+
+    let moveHistory = [];
+    let validationPassed = true;
+    let solutionCache = {}; // 日期 -> boolean，缓存求解结果
+
+    // ================= 设置 & 音频 =================
+    const SETTINGS_KEY = "calendar_puzzle_settings_v1";
+    const DEFAULT_SETTINGS = { master: true, sfx: true, vibrate: true };
+    let settings = { ...DEFAULT_SETTINGS };
+    let audioCtx = null;
+
+    function loadSettings() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null");
+            if (saved && typeof saved === "object") settings = { ...DEFAULT_SETTINGS, ...saved };
+        } catch (e) { settings = { ...DEFAULT_SETTINGS }; }
+    }
+    function saveSettings() {
+        try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    }
+    function isSfxEnabled() { return settings.master && settings.sfx; }
+    function isVibrateEnabled() { return settings.vibrate; }
+
+    function initAudio() {
+        if (!settings.master) return;
+        if (!audioCtx) {
+            try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return; }
+        }
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+    function playTone(freq, type, duration, vol = 0.1, delay = 0) {
+        if (!isSfxEnabled() || !audioCtx) return;
+        const t0 = audioCtx.currentTime + delay;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, t0);
+        gain.gain.setValueAtTime(vol, t0);
+        gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(t0); osc.stop(t0 + duration);
+    }
+
+    const SFX = {
+        place: () => { playTone(720, 'triangle', 0.09, 0.09); playTone(1080, 'sine', 0.06, 0.04, 0.02); },
+        remove: () => { playTone(400, 'sine', 0.1, 0.07); },
+        rotate: () => { playTone(950, 'sine', 0.05, 0.06); },
+        undo: () => { playTone(500, 'sine', 0.08, 0.07); playTone(350, 'sine', 0.1, 0.05, 0.06); },
+        invalid: () => { playTone(220, 'square', 0.1, 0.05); },
+        win: () => {
+            playTone(523.25, 'sine', 0.15, 0.1, 0);
+            playTone(659.25, 'sine', 0.15, 0.1, 0.12);
+            playTone(783.99, 'sine', 0.15, 0.1, 0.24);
+            playTone(1046.5, 'sine', 0.5, 0.12, 0.36);
+        }
+    };
+
+    function vibrate(pattern) {
+        if (!isVibrateEnabled()) return;
+        if (navigator.vibrate) {
+            try { navigator.vibrate(pattern); } catch (e) {}
+        }
+    }
+
+    // 设置 UI
+    function updateToggleUI() {
+        const map = {
+            'toggle-master': settings.master,
+            'toggle-sfx': settings.sfx,
+            'toggle-vibrate': settings.vibrate
+        };
+        for (const [id, on] of Object.entries(map)) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('on', on);
+        }
+        const sfxEl = document.getElementById('toggle-sfx');
+        if (settings.master) sfxEl.classList.remove('disabled');
+        else sfxEl.classList.add('disabled');
+    }
+    function toggleSetting(key) {
+        if (key !== 'master' && !settings.master) return;
+        settings[key] = !settings[key];
+        saveSettings();
+        updateToggleUI();
+        if (key === 'master' && settings.master) initAudio();
+        if (key === 'sfx' && settings.sfx && settings.master) {
+            initAudio();
+            playTone(660, 'sine', 0.08, 0.06);
+        }
+        if (key === 'vibrate' && settings.vibrate) vibrate(20);
+    }
+    function openSettings() { initAudio(); updateToggleUI(); document.getElementById('settings-overlay').classList.add('show'); }
+    function closeSettings() { document.getElementById('settings-overlay').classList.remove('show'); }
+    function resetSettings() {
+        settings = { ...DEFAULT_SETTINGS };
+        saveSettings();
+        updateToggleUI();
+    }
+
+    // ================= 尺寸自适应 =================
+    function computeSize() {
+        // 棋盘宽度 = COLS * SIZE，需要适配视口
+        const isMobile = window.innerWidth <= 800;
+        if (isMobile) {
+            // 手机：棋盘占满宽度，留出 body padding 10*2 和 border 4*2
+            const availableW = Math.min(window.innerWidth - 20 - 8, 420);
+            SIZE = Math.floor(availableW / COLS);
+            SIZE = Math.max(36, Math.min(56, SIZE));
+        } else {
+            // 桌面：固定 50，但如果窗口很小也要缩
+            const availableW = Math.min((window.innerWidth - 60) * 0.42, 400);
+            SIZE = Math.floor(availableW / COLS);
+            SIZE = Math.max(40, Math.min(54, SIZE));
+        }
+    }
+
+    function applySize() {
+        computeSize();
+        const boardWrapper = document.getElementById('board-wrapper');
+        boardWrapper.style.width = (COLS * SIZE) + 'px';
+        boardWrapper.style.height = (ROWS * SIZE) + 'px';
+
+        // 调整棋盘格子
+        document.querySelectorAll('#board-wrapper .cell').forEach(el => {
+            const x = parseInt(el.dataset.x, 10);
+            const y = parseInt(el.dataset.y, 10);
+            el.style.width = SIZE + 'px';
+            el.style.height = SIZE + 'px';
+            el.style.left = (x * SIZE) + 'px';
+            el.style.top = (y * SIZE) + 'px';
+            el.style.fontSize = Math.max(9, Math.round(SIZE * 0.24)) + 'px';
+        });
+        // 垂直文字保持小号
+        document.querySelectorAll('#board-wrapper .cell.vertical-text').forEach(el => {
+            el.style.fontSize = Math.max(9, Math.round(SIZE * 0.24)) + 'px';
+        });
+
+        // 重新渲染已放置的拼图块
+        document.querySelectorAll('#board-wrapper .piece').forEach(el => el.remove());
+        pieces.forEach(p => {
+            if (!p.placed) return;
+            const boardEl = document.getElementById('board-wrapper');
+            const pieceEl = createPieceElement(p);
+            pieceEl.style.position = 'absolute';
+            pieceEl.style.left = (p.y * SIZE) + 'px';
+            pieceEl.style.top = (p.x * SIZE) + 'px';
+            boardEl.appendChild(pieceEl);
+        });
+
+        // 重渲染池子
+        renderPool();
+    }
+
+    // ================= 音效相关工具 =================
+    function showToast(msg, type = '') {
+        const toast = document.getElementById('toast');
+        toast.innerText = msg;
+        toast.className = type;
+        toast.classList.add('show');
+        clearTimeout(toast._t);
+        toast._t = setTimeout(() => toast.classList.remove('show'), 1600);
+    }
+
+    // ================= P0：数据校验 =================
+    function validateData() {
+        const errors = [];
+        const templateFillable = boardTemplate.filter(item => item.s === 1).length;
+        const piecesTotal = rawPieces.reduce((sum, p) => sum + p.length, 0);
+
+        if (templateFillable !== piecesTotal + 3) {
+            errors.push(`底盘可填格数(${templateFillable}) ≠ 拼图总面积(${piecesTotal}) + 3个留空 = ${piecesTotal + 3}`);
+        }
+
+        rawPieces.forEach((shape, i) => {
+            const seen = new Set();
+            for (const [r, c] of shape) {
+                const key = `${r},${c}`;
+                if (seen.has(key)) {
+                    errors.push(`第 ${i + 1} 块拼图存在重复坐标 (${r},${c})`);
+                    break;
+                }
+                seen.add(key);
+            }
+        });
+
+        const posSet = new Set();
+        for (const item of boardTemplate) {
+            const key = `${item.y},${item.x}`;
+            if (posSet.has(key)) {
+                errors.push(`底盘坐标重复：(${item.y}, ${item.x})`);
+                break;
+            }
+            posSet.add(key);
+        }
+
+        if (errors.length > 0) {
+            validationPassed = false;
+            const bar = document.getElementById('validation-bar');
+            bar.innerHTML = `<strong>⚠ 数据校验失败（游戏无法正常进行）</strong>` + errors.join('<br>');
+            bar.classList.add('show');
+            console.error('[日历拼图] 数据校验失败：', errors);
+            return false;
+        }
+
+        validationPassed = true;
+        document.getElementById('validation-bar').classList.remove('show');
+        return true;
+    }
+
+    // ================= P1：撤销栈 =================
+    function pushHistory(pieceId, startR, startC, shape) {
+        moveHistory.push({ pieceId, startR, startC, shape: shape.map(pt => [...pt]) });
+        updateUndoButton();
+    }
+    function clearHistory() { moveHistory = []; updateUndoButton(); }
+    function updateUndoButton() {
+        const btn = document.getElementById('undoBtn');
+        if (!btn) return;
+        btn.disabled = moveHistory.length === 0 || isAutoSolving;
+    }
+    function undoLast() {
+        if (isAutoSolving) return;
+        if (moveHistory.length === 0) return;
+
+        const last = moveHistory.pop();
+        const p = pieces.find(x => x.id === last.pieceId);
+        if (!p || !p.placed) { updateUndoButton(); return; }
+
+        p.shape.forEach(pt => {
+            const r = p.x + pt[0], c = p.y + pt[1];
+            if (r >= 0 && r < ROWS && c >= 0 && c < COLS) boardState[r][c] = 1;
+        });
+
+        const boardEl = document.getElementById('board-wrapper');
+        const pieceEls = boardEl.querySelectorAll('.piece');
+        for (const el of pieceEls) {
+            if (el.dataset.pieceId === String(p.id)) { el.remove(); break; }
+        }
+
+        p.placed = false; p.x = -1; p.y = -1;
+        p.shape = last.shape.map(pt => [...pt]);
+        placedCount = Math.max(0, placedCount - 1);
+        if (placedCount === 0) pauseTimer();
+
+        renderPool();
+        updateUndoButton();
+        SFX.undo();
+        vibrate(15);
+        showToast('已撤销一步');
+    }
+
+    // ================= 前台日期 → 布局 =================
+    function updateLayout() {
+        const dateInput = document.getElementById('dateInput');
+        const d = new Date(dateInput.value + 'T00:00:00');
+        const monthStr = (d.getMonth() + 1) + "月";
+        const dayStr = d.getDate() + "日";
+        const weekStr = "星期" + ["日", "一", "二", "三", "四", "五", "六"][d.getDay()];
+
+        currentLayout = boardTemplate.map(item => {
+            const newItem = { ...item };
+            if (newItem.t === monthStr || newItem.t === dayStr || newItem.t === weekStr) {
+                newItem.s = 2; 
+            } else if (newItem.s === 2) {
+                newItem.s = 1; 
+            }
+            return newItem;
+        });
+    }
+
+    function renderBoard() {
+        const boardEl = document.getElementById('board-wrapper');
+        boardEl.innerHTML = '';
+        boardEl.style.width = (COLS * SIZE) + 'px';
+        boardEl.style.height = (ROWS * SIZE) + 'px';
+        boardState = Array(ROWS).fill(null).map(() => Array(COLS).fill(0));
+
+        currentLayout.forEach(item => {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.x = item.x;
+            cell.dataset.y = item.y;
+            cell.style.left = (item.x * SIZE) + 'px';
+            cell.style.top = (item.y * SIZE) + 'px';
+            cell.style.width = SIZE + 'px';
+            cell.style.height = SIZE + 'px';
+            cell.style.fontSize = Math.max(9, Math.round(SIZE * 0.24)) + 'px';
+            cell.innerText = item.t;
+
+            if (item.s === 2) cell.classList.add('target');
+            else if (item.s === 3) cell.classList.add('blank-board');
+            else if (item.s === 4) cell.classList.add('blank-top');
+            else if (item.t === "星期日") cell.classList.add('vertical-text');
+            else if (item.t.includes("星期")) cell.classList.add('small-text');
+            
+            if (item.s === 1) boardState[item.y][item.x] = 1;
+            boardEl.appendChild(cell);
+        });
+    }
+
+    function resetPieces() {
+        pieces = rawPieces.map((shape, index) => ({
+            id: index, shape: JSON.parse(JSON.stringify(shape)), placed: false, x: -1, y: -1,
+            color: pieceColors[index], glow: pieceGlows[index]
+        }));
+        placedCount = 0;
+        renderPool();
+        updateUndoButton();
+    }
+
+    function renderPool() {
+        const poolEl = document.getElementById('pool-area');
+        poolEl.innerHTML = '';
+
+        pieces.forEach(p => {
+            if (p.placed) return;
+            const pEl = createPieceElement(p);
+            pEl.style.position = 'relative'; 
+            pEl.dataset.pieceId = String(p.id);
+            
+            let isDragging = false;
+            pEl.addEventListener('pointerdown', (e) => {
+                if (isAutoSolving) return; 
+                if (e.button === 2) { e.preventDefault(); flipPiece(p); return; }
+
+                e.preventDefault();
+                initAudio();
+                isDragging = false;
+                pEl.style.zIndex = '999';
+                pEl.setPointerCapture(e.pointerId); 
+
+                const rect = pEl.getBoundingClientRect();
+                dragOffset.x = e.clientX - rect.left;
+                dragOffset.y = e.clientY - rect.top;
+
+                const ghost = pEl.cloneNode(true);
+                ghost.id = 'drag-ghost';
+                ghost.style.left = rect.left + 'px'; ghost.style.top = rect.top + 'px'; ghost.style.position = 'fixed';
+                document.body.appendChild(ghost);
+                pEl.style.opacity = '0.2';
+
+                const onPointerMove = (ev) => {
+                    ev.preventDefault();
+                    isDragging = true;
+                    ghost.style.left = (ev.clientX - dragOffset.x) + 'px';
+                    ghost.style.top = (ev.clientY - dragOffset.y) + 'px';
+                    showPreview(p, ev.clientX - dragOffset.x, ev.clientY - dragOffset.y);
+                };
+
+                const onPointerUp = (ev) => {
+                    ev.preventDefault();
+                    pEl.removeEventListener('pointermove', onPointerMove);
+                    pEl.removeEventListener('pointerup', onPointerUp);
+                    pEl.removeEventListener('pointercancel', onPointerUp);
+                    ghost.remove();
+                    
+                    if (!isDragging) {
+                        pEl.style.zIndex = '10'; pEl.style.opacity = '1';
+                        rotatePiece(p); 
+                    } else {
+                        tryPlacePiece(p, ev.clientX - dragOffset.x, ev.clientY - dragOffset.y);
+                    }
+                };
+                pEl.addEventListener('pointermove', onPointerMove);
+                pEl.addEventListener('pointerup', onPointerUp);
+                pEl.addEventListener('pointercancel', onPointerUp);
+            });
+
+            pEl.addEventListener('contextmenu', e => e.preventDefault());
+            poolEl.appendChild(pEl);
+        });
+    }
+
+    function createPieceElement(p) {
+        const el = document.createElement('div');
+        el.className = 'piece';
+        el.dataset.pieceId = String(p.id);
+        let minR = 99, minC = 99, maxR = -1, maxC = -1;
+        p.shape.forEach(pt => {
+            if (pt[0] < minR) minR = pt[0]; if (pt[0] > maxR) maxR = pt[0];
+            if (pt[1] < minC) minC = pt[1]; if (pt[1] > maxC) maxC = pt[1];
+        });
+        el.style.width = (maxC - minC + 1) * SIZE + 'px';
+        el.style.height = (maxR - minR + 1) * SIZE + 'px';
+
+        p.shape.forEach(pt => {
+            const block = document.createElement('div');
+            block.className = 'piece-block';
+            block.style.backgroundColor = p.color;
+            block.style.setProperty('--glow-color', p.glow || 'transparent');
+            block.style.width = SIZE + 'px';
+            block.style.height = SIZE + 'px';
+            block.style.left = (pt[1] - minC) * SIZE + 'px';
+            block.style.top = (pt[0] - minR) * SIZE + 'px';
+            el.appendChild(block);
+        });
+        return el;
+    }
+
+    function rotatePiece(p) {
+        if (p.placed) return;
+        p.shape = p.shape.map(pt => [pt[1], -pt[0]]);
+        normalize(p);
+        renderPool();
+        SFX.rotate();
+    }
+
+    function flipPiece(p) {
+        if (p.placed) return;
+        p.shape = p.shape.map(pt => [pt[0], -pt[1]]);
+        normalize(p);
+        renderPool();
+        SFX.rotate();
+    }
+
+    function normalize(p) {
+        const minR = Math.min(...p.shape.map(pt => pt[0]));
+        const minC = Math.min(...p.shape.map(pt => pt[1]));
+        p.shape = p.shape.map(pt => [pt[0] - minR, pt[1] - minC]);
+    }
+
+    function getGridPos(clientX, clientY) {
+        const rect = document.getElementById('board-wrapper').getBoundingClientRect();
+        return {
+            startC: Math.round((clientX - rect.left) / SIZE),
+            startR: Math.round((clientY - rect.top) / SIZE)
+        };
+    }
+
+    function showPreview(p, clientX, clientY) {
+        clearPreview();
+        const {startC, startR} = getGridPos(clientX, clientY);
+        if (startC < -2 || startR < -2 || startC > COLS + 2 || startR > ROWS + 2) return;
+
+        if (canPlace(p, startR, startC)) {
+            const boardEl = document.getElementById('board-wrapper');
+            p.shape.forEach(pt => {
+                const prev = document.createElement('div');
+                prev.className = 'preview';
+                prev.style.width = SIZE + 'px';
+                prev.style.height = SIZE + 'px';
+                prev.style.left = ((startC + pt[1]) * SIZE) + 'px';
+                prev.style.top = ((startR + pt[0]) * SIZE) + 'px';
+                boardEl.appendChild(prev);
+            });
+        }
+    }
+
+    function clearPreview() {
+        document.querySelectorAll('.preview').forEach(el => el.remove());
+    }
+
+    function tryPlacePiece(p, clientX, clientY) {
+        const {startC, startR} = getGridPos(clientX, clientY);
+        if (canPlace(p, startR, startC)) {
+            pushHistory(p.id, startR, startC, p.shape);
+
+            p.placed = true; p.x = startR; p.y = startC;
+            p.shape.forEach(pt => { boardState[startR + pt[0]][startC + pt[1]] = 0; });
+            
+            placedCount++;
+            if (placedCount === 1) startTimer();
+
+            const boardEl = document.getElementById('board-wrapper');
+            const boardPieceEl = createPieceElement(p);
+            boardPieceEl.style.position = 'absolute';
+            boardPieceEl.style.left = (startC * SIZE) + 'px';
+            boardPieceEl.style.top = (startR * SIZE) + 'px';
+            boardPieceEl.classList.add('piece-just-placed');
+            setTimeout(() => boardPieceEl.classList.remove('piece-just-placed'), 260);
+
+            boardPieceEl.addEventListener('dblclick', (e) => {
+                e.preventDefault();
+                if (isAutoSolving) return;
+                removePieceFromBoard(p, boardPieceEl);
+            });
+
+            boardEl.appendChild(boardPieceEl);
+            renderPool();
+            updateUndoButton();
+            SFX.place();
+            vibrate(10);
+            checkWin();
+        } else {
+            renderPool();
+            SFX.invalid();
+        }
+    }
+
+    function removePieceFromBoard(p, boardPieceEl) {
+        for (let i = moveHistory.length - 1; i >= 0; i--) {
+            if (moveHistory[i].pieceId === p.id) { moveHistory.splice(i, 1); break; }
+        }
+
+        p.shape.forEach(pt => { 
+            const r = p.x + pt[0], c = p.y + pt[1];
+            if (r >= 0 && r < ROWS && c >= 0 && c < COLS) boardState[r][c] = 1; 
+        });
+        p.placed = false; p.x = -1; p.y = -1;
+        placedCount = Math.max(0, placedCount - 1);
+        if (placedCount === 0) pauseTimer();
+        boardPieceEl.remove();
+        renderPool();
+        updateUndoButton();
+        SFX.remove();
+        vibrate(10);
+    }
+
+    function canPlace(p, startR, startC) {
+        for (let pt of p.shape) {
+            const r = startR + pt[0], c = startC + pt[1];
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return false;
+            if (boardState[r][c] !== 1) return false;
+        }
+        return true;
+    }
+
+    function checkWin() {
+        if (isAutoSolving) return;
+        let emptyCount = 0;
+        for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if (boardState[r][c] === 1) emptyCount++;
+        
+        if (emptyCount === 0) {
+            stopTimer(); 
+            const date = document.getElementById('dateInput').value;
+            const finalTime = elapsedTime;
+            const recordKey = `calendar_puzzle_time_${date}`;
+            const bestTimeStr = localStorage.getItem(recordKey);
+            let isNewRecord = false;
+
+            if (!bestTimeStr || finalTime < parseFloat(bestTimeStr)) {
+                localStorage.setItem(recordKey, finalTime.toFixed(1));
+                isNewRecord = true;
+                updateBestRecordDisplay();
+            }
+
+            const timeStr = formatTime(finalTime);
+            SFX.win();
+            vibrate([40, 60, 80, 60, 120]);
+            
+            // 棋盘发光
+            const boardEl = document.getElementById('board-wrapper');
+            boardEl.style.transition = 'box-shadow 0.4s';
+            boardEl.style.boxShadow = '0 0 40px rgba(74, 222, 128, 0.9), 5px 5px 15px rgba(0,0,0,0.2)';
+            setTimeout(() => { boardEl.style.boxShadow = '5px 5px 15px rgba(0,0,0,0.2), inset 0 0 20px rgba(140,90,45,0.15)'; }, 1200);
+
+            setTimeout(() => {
+                if (isNewRecord) {
+                    showToast(`🎉 ${timeStr} 破纪录！`, '');
+                } else {
+                    showToast(`🎉 拼好了！用时 ${timeStr}`);
+                }
+            }, 100);
+        }
+    }
+
+    function formatTime(ms) {
+        const totalSeconds = Math.floor(ms / 1000);
+        const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+        const s = (totalSeconds % 60).toString().padStart(2, '0');
+        const ms10 = Math.floor((ms % 1000) / 100).toString();
+        return `${m}:${s}.${ms10}`;
+    }
+
+    function startTimer() {
+        if (isTimerRunning) return;
+        isTimerRunning = true;
+        startTime = Date.now() - elapsedTime;
+        timerInterval = setInterval(() => {
+            elapsedTime = Date.now() - startTime;
+            document.getElementById('timerDisplay').innerText = formatTime(elapsedTime);
+        }, 50); 
+    }
+
+    function pauseTimer() {
+        if (!isTimerRunning) return;
+        isTimerRunning = false;
+        clearInterval(timerInterval);
+    }
+    function stopTimer() { pauseTimer(); }
+    function resetTimer() {
+        pauseTimer();
+        isTimerRunning = false;
+        elapsedTime = 0;
+        document.getElementById('timerDisplay').innerText = "00:00.0";
+    }
+
+    function updateBestRecordDisplay() {
+        const date = document.getElementById('dateInput').value;
+        const recordKey = `calendar_puzzle_time_${date}`;
+        const bestTimeStr = localStorage.getItem(recordKey);
+        const el = document.getElementById('bestRecord');
+        el.innerText = bestTimeStr ? `当日最佳: ${formatTime(parseFloat(bestTimeStr))}` : `当日最佳: --`;
+    }
+
+    function forceCleanBoard() {
+        isAutoSolving = false;
+        const boardEl = document.getElementById('board-wrapper');
+        boardEl.querySelectorAll('.piece').forEach(el => el.remove());
+
+        boardState = Array(ROWS).fill(null).map(() => Array(COLS).fill(0));
+        currentLayout.forEach(item => {
+            if (item.s === 1) boardState[item.y][item.x] = 1;
+        });
+
+        pieces.forEach(p => { p.placed = false; p.x = -1; p.y = -1; });
+        placedCount = 0;
+        resetTimer(); 
+        renderPool();
+        clearHistory();
+    }
+
+    // ================= 求解器（用于自动拼图 & 预检） =================
+    // 返回 solution 数组，或 null 表示无解
+    function solveCurrentLayout() {
+        const available = rawPieces.map((rp, i) => ({ id: i, orients: getAllOrientations(rp), used: false }));
+        const solution = [];
+        const calcBoard = Array(ROWS).fill(null).map(() => Array(COLS).fill(0));
+        currentLayout.forEach(item => {
+            if (item.s === 1) calcBoard[item.y][item.x] = 1;
+        });
+
+        function backtrack() {
+            let emptyR = -1, emptyC = -1;
+            for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) if (calcBoard[r][c] === 1) { emptyR = r; emptyC = c; break; if (emptyR !== -1) break; }
+            if (emptyR === -1) return true; 
+
+            for (let i = 0; i < available.length; i++) {
+                const p = available[i];
+                if (p.used) continue;
+                for (let orient of p.orients) {
+                    for (let pt of orient.shape) {
+                        const startR = emptyR - pt[0], startC = emptyC - pt[1];
+                        if (startR < 0 || startC < 0) continue;
+                        let valid = true;
+                        for (let spt of orient.shape) {
+                            const r = startR + spt[0], c = startC + spt[1];
+                            if (r >= ROWS || c >= COLS || calcBoard[r][c] !== 1) { valid = false; break; }
+                        }
+                        if (valid) {
+                            for (let spt of orient.shape) calcBoard[startR + spt[0]][startC + spt[1]] = 0;
+                            p.used = true;
+                            solution.push({ id: p.id, startR, startC, shape: orient.shape });
+                            if (backtrack()) return true;
+                            solution.pop(); p.used = false;
+                            for (let spt of orient.shape) calcBoard[startR + spt[0]][startC + spt[1]] = 1;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        return backtrack() ? solution : null;
+    }
+
+    // 查询当前布局是否有解（缓存）
+    function checkSolvable() {
+        const date = document.getElementById('dateInput').value;
+        if (solutionCache[date] !== undefined) return solutionCache[date];
+        const sol = solveCurrentLayout();
+        solutionCache[date] = sol !== null;
+        return solutionCache[date];
+    }
+
+    function autoSolve() {
+        if (isAutoSolving) return;
+        const solution = solveCurrentLayout();
+        if (!solution) {
+            SFX.invalid();
+            showToast('这个日期物理上无解，换一天吧', 'warn');
+            return;
+        }
+
+        forceCleanBoard();
+        isAutoSolving = true;
+        updateUndoButton();
+
+        let delay = 0;
+        const total = solution.length;
+        solution.forEach((sol, idx) => {
+            setTimeout(() => {
+                const p = pieces.find(x => x.id === sol.id);
+                p.shape = sol.shape; 
+                p.placed = true; p.x = sol.startR; p.y = sol.startC;
+                p.shape.forEach(pt => { boardState[sol.startR + pt[0]][sol.startC + pt[1]] = 0; });
+
+                const boardEl = document.getElementById('board-wrapper');
+                const boardPieceEl = createPieceElement(p);
+                boardPieceEl.style.position = 'absolute';
+                boardPieceEl.style.left = (sol.startC * SIZE) + 'px';
+                boardPieceEl.style.top = (sol.startR * SIZE) + 'px';
+                boardEl.appendChild(boardPieceEl);
+                
+                renderPool();
+
+                if (idx === total - 1) {
+                    isAutoSolving = false;
+                    updateUndoButton();
+                }
+            }, delay);
+            delay += 80;
+        });
+    }
+
+    function getAllOrientations(shape) {
+        let orientations = [];
+        let current = shape;
+        for (let i = 0; i < 4; i++) {
+            const minR = Math.min(...current.map(pt => pt[0]));
+            const minC = Math.min(...current.map(pt => pt[1]));
+            const norm = current.map(pt => [pt[0] - minR, pt[1] - minC]).sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+            const str = JSON.stringify(norm);
+            if (!orientations.find(o => o.str === str)) orientations.push({ shape: norm, str: str });
+
+            const flipped = current.map(pt => [pt[0], -pt[1]]);
+            const fMinR = Math.min(...flipped.map(pt => pt[0]));
+            const fMinC = Math.min(...flipped.map(pt => pt[1]));
+            const fNorm = flipped.map(pt => [pt[0] - fMinR, pt[1] - fMinC]).sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+            const fStr = JSON.stringify(fNorm);
+            if (!orientations.find(o => o.str === fStr)) orientations.push({ shape: fNorm, str: fStr });
+
+            current = current.map(pt => [pt[1], -pt[0]]);
+        }
+        return orientations;
+    }
+
+    // ================= 日期无解前置提示 =================
+    function onDateChange() {
+        const dateInput = document.getElementById('dateInput');
+        if (!dateInput.value || !dateInput.value.startsWith("20")) return;
+
+        updateLayout();
+        // 静默检查是否有解
+        const solvable = checkSolvable();
+        renderBoard();
+        resetPieces();
+        resetTimer();
+        clearHistory();
+        updateBestRecordDisplay();
+
+        if (!solvable) {
+            showToast('⚠ 这个日期本身无解，换一天试试', 'warn');
+        }
+    }
+
+    // ================= 初始化 =================
+    function initGame() {
+        const dateInput = document.getElementById('dateInput');
+        if (!dateInput.value || !dateInput.value.startsWith("20")) {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            dateInput.value = `${yyyy}-${mm}-${dd}`;
+        }
+
+        if (!validateData()) return;
+
+        computeSize();
+        updateLayout();
+        renderBoard();
+        resetPieces();
+        resetTimer();
+        clearHistory();
+        updateBestRecordDisplay();
+
+        // 初次加载也检查一下是否有解
+        if (!checkSolvable()) {
+            showToast('⚠ 今天这个日期无解，换一天试试', 'warn');
+        }
+    }
+
+    function resetGame() {
+        forceCleanBoard();
+        resetPieces(); 
+        resetTimer();
+        SFX.remove();
+        vibrate(10);
+    }
+
+    // ================= 事件绑定 =================
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            undoLast();
+        }
+        if (e.key === 'Escape') closeSettings();
+    });
+
+    document.getElementById('dateInput').addEventListener('change', onDateChange);
+
+    // 窗口尺寸变化时重新计算
+    let resizeTimer = null;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            if (!validationPassed) return;
+            applySize();
+        }, 150);
+    });
+
+    window.onload = () => {
+        loadSettings();
+        updateToggleUI();
+        initGame();
+    };
+</script>
+</body>
+</html>
