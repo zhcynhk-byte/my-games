@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>圣诞树</title>
+    <style>
+        html, body { margin:0; padding:0; overflow:hidden; background:#030208; font-family:sans-serif; }
+        canvas { display:block; }
+        #audioTip {
+            position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+            color:rgba(216,180,254,0.85); font-size:14px; letter-spacing:3px;
+            pointer-events:none; text-align:center; line-height:2;
+            transition:opacity 0.6s;
+        }
+        #audioTip.hide { opacity:0; }
+        @media (max-width:480px) { #audioTip { font-size:12px; } }
+    </style>
+</head>
+<body>
+    <div id="audioTip">轻触屏幕<br>开启音乐</div>
+    <canvas id="scene"></canvas>
+
+<script>
+// ============================================================
+// 【可修改】名字与年份
+// ============================================================
+var NAME = "LiYuan Xing ";   // 改成你想要的名字
+var YEAR = "2026";   // 年份
+
+// ============================================================
+// 基础
+// ============================================================
+var canvas = document.getElementById('scene');
+var ctx = canvas.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+var TAU = Math.PI * 2;
+
+var cx = 0, groundY = 0, treeBaseY = 0, treeTopY = 0, treeH = 0, treeBaseW = 0;
+
+var rnd = function(a, b) { return a + Math.random() * (b - a); };
+
+// ============================================================
+// 背景元素
+// ============================================================
+var bgStars = [];
+var snow = [];
+var bursts = [];
+var aurora = [];
+var sparkles = [];
+var mountains = [];
+var farTrees = [];
+var cabin = null;
+var snowHills = [];
+
+// ============================================================
+// 音频引擎
+// ============================================================
+var audioCtx = null;
+var bgmGain = null;
+var bgmStarted = false;
+var bgmTimer = null;
+var audioUnlocked = false;
+
+function initAudioOnce() {
+    if (audioUnlocked) return;
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        bgmGain = audioCtx.createGain();
+        bgmGain.gain.value = 0;
+        bgmGain.connect(audioCtx.destination);
+    } catch (e) {
+        return;
+    }
+    audioUnlocked = true;
+    var tip = document.getElementById('audioTip');
+    if (tip) tip.classList.add('hide');
+    bgmGain.gain.linearRampToValueAtTime(0.22, audioCtx.currentTime + 2.0);
+    startBGM();
+}
+
+function playBoxNote(freq, startTime, dur, vol) {
+    if (!audioCtx) return;
+    var t0 = startTime;
+
+    var osc1 = audioCtx.createOscillator();
+    var g1 = audioCtx.createGain();
+    osc1.type = 'triangle';
+    osc1.frequency.setValueAtTime(freq, t0);
+    g1.gain.setValueAtTime(0, t0);
+    g1.gain.linearRampToValueAtTime(vol, t0 + 0.008);
+    g1.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    osc1.connect(g1);
+    g1.connect(bgmGain);
+    osc1.start(t0);
+    osc1.stop(t0 + dur + 0.05);
+
+    var osc2 = audioCtx.createOscillator();
+    var g2 = audioCtx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(freq * 2, t0);
+    g2.gain.setValueAtTime(0, t0);
+    g2.gain.linearRampToValueAtTime(vol * 0.35, t0 + 0.006);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.7);
+    osc2.connect(g2);
+    g2.connect(bgmGain);
+    osc2.start(t0);
+    osc2.stop(t0 + dur * 0.7 + 0.05);
+
+    var osc3 = audioCtx.createOscillator();
+    var g3 = audioCtx.createGain();
+    osc3.type = 'sine';
+    osc3.frequency.setValueAtTime(freq * 4.02, t0);
+    g3.gain.setValueAtTime(0, t0);
+    g3.gain.linearRampToValueAtTime(vol * 0.08, t0 + 0.004);
+    g3.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * 0.4);
+    osc3.connect(g3);
+    g3.connect(bgmGain);
+    osc3.start(t0);
+    osc3.stop(t0 + dur * 0.4 + 0.05);
+}
+
+var noteFreq = {
+    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
+    C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
+    C6: 1046.50, E6: 1318.51, G6: 1567.98
+};
+
+var bgmPattern = [
+    { chord: ['C4','E4','G4','C5'], melody: ['E5',null,'G5',null] },
+    { chord: ['A4','C5','E5','A5'], melody: ['C6',null,null,'A5'] },
+    { chord: ['F4','A4','C5','F5'], melody: ['A5',null,'F5',null] },
+    { chord: ['G4','B4','D5','G5'], melody: ['B4','D5','G5',null] },
+    { chord: ['C4','E4','G4','C5'], melody: ['E5','G5',null,'E5'] },
+    { chord: ['A4','C5','E5','A5'], melody: ['A5',null,'G5','E5'] },
+    { chord: ['F4','A4','C5','F5'], melody: ['A5',null,'C6',null] },
+    { chord: ['G4','B4','D5','G5'], melody: ['B4','D5','G5','E5'] }
+];
+
+var BPM = 68;
+var beatDuration = 60 / BPM;
+var barDuration = beatDuration * 4;
+var currentBar = 0;
+var bgmNextBarTime = 0;
+
+function scheduleBar(barIndex, startTime) {
+    var bar = bgmPattern[barIndex % bgmPattern.length];
+    for (var i = 0; i < bar.chord.length; i++) {
+        var note = bar.chord[i];
+        var freq = noteFreq[note];
+        if (freq) {
+            var t = startTime + i * beatDuration;
+            playBoxNote(freq, t, beatDuration * 2.2, 0.10);
+        }
+    }
+    for (var i = 0; i < bar.melody.length; i++) {
+        var note = bar.melody[i];
+        if (note) {
+            var freq = noteFreq[note];
+            if (freq) {
+                var t = startTime + i * beatDuration + beatDuration * 0.02;
+                playBoxNote(freq, t, beatDuration * 2.6, 0.13);
+            }
+        }
+    }
+}
+
+function startBGM() {
+    if (!audioCtx || bgmStarted) return;
+    bgmStarted = true;
+    bgmNextBarTime = audioCtx.currentTime + 0.15;
+    currentBar = 0;
+
+    function tick() {
+        if (!audioCtx) return;
+        var lookahead = 1.2;
+        while (bgmNextBarTime < audioCtx.currentTime + lookahead) {
+            scheduleBar(currentBar, bgmNextBarTime);
+            currentBar++;
+            bgmNextBarTime += barDuration;
+        }
+        bgmTimer = setTimeout(tick, 400);
+    }
+    tick();
+}
+
+function playClickSound() {
+    if (!audioCtx) return;
+    var t0 = audioCtx.currentTime;
+    var osc = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    var osc2 = audioCtx.createOscillator();
+    var g2 = audioCtx.createGain();
+
+    var scale = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50];
+    var f = scale[Math.floor(Math.random() * scale.length)];
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(f, t0);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.16, t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.7);
+    osc.connect(g);
+    g.connect(audioCtx.destination);
+
+    osc2.type = 'triangle';
+    osc2.frequency.setValueAtTime(f * 2, t0);
+    g2.gain.setValueAtTime(0, t0);
+    g2.gain.linearRampToValueAtTime(0.06, t0 + 0.004);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.4);
+    osc2.connect(g2);
+    g2.connect(audioCtx.destination);
+
+    osc.start(t0); osc.stop(t0 + 0.75);
+    osc2.start(t0); osc2.stop(t0 + 0.45);
+}
+
+// ============================================================
+// 树的几何定义
+// ============================================================
+function computeTierGeometry(treeBaseW_, treeH_, tierCount, seed) {
+    var tiers = [];
+    for (var i = 0; i < tierCount; i++) {
+        var baseProg = 0.02 + (i / tierCount) * 0.88;
+        var tipProg = baseProg + (0.88 / tierCount) * 1.55;
+
+        var baseHalfW;
+        if (i === 0) baseHalfW = treeBaseW_ * 0.5;
+        else {
+            var ratio = (i + 1) / tierCount;
+            baseHalfW = treeBaseW_ * 0.5 * Math.pow(ratio, 0.72);
+        }
+
+        var edgePoints = [];
+        var edgeSegs = 22;
+        for (var k = 0; k <= edgeSegs; k++) {
+            var u = k / edgeSegs;
+            var lateral = (u - 0.5) * 2;
+            var sagCurve = Math.cos(lateral * Math.PI / 2);
+            var tooth =
+                Math.sin(u * Math.PI * 14 + i * 2.3 + seed) * 0.5 +
+                Math.sin(u * Math.PI * 23 + i * 1.1 + seed) * 0.3 +
+                Math.sin(u * Math.PI * 6 + i * 3.7 + seed) * 0.2;
+            var toothAmp = treeH_ * 0.018;
+            var sag = treeH_ * 0.022 * sagCurve;
+            var drop = sag + tooth * toothAmp;
+            edgePoints.push({ u: u, lateral: lateral, drop: drop });
+        }
+
+        tiers.push({
+            index: i,
+            baseProg: baseProg,
+            tipProg: tipProg,
+            baseHalfW: baseHalfW,
+            edgePoints: edgePoints
+        });
+    }
+    return tiers;
+}
+
+function drawTierTree(centerX, baseY_, height, tiers, growth, alphaMul, depthTint) {
+    alphaMul = alphaMul === undefined ? 1 : alphaMul;
+    if (growth <= 0 || alphaMul <= 0) return;
+
+    for (var i = 0; i < tiers.length; i++) {
+        var tier = tiers[i];
+        if (growth < tier.baseProg) continue;
+
+        var visibleTipProg;
+        if (growth >= tier.tipProg) visibleTipProg = tier.tipProg;
+        else visibleTipProg = growth;
+
+        var tierBaseY = baseY_ - tier.baseProg * height;
+        var tipY = baseY_ - visibleTipProg * height;
+
+        var baseHalfW = tier.baseHalfW;
+        var fullTipProg = tier.tipProg;
+        var tipHalfW;
+        if (visibleTipProg >= fullTipProg) tipHalfW = 0;
+        else {
+            var remain = (fullTipProg - visibleTipProg) / (fullTipProg - tier.baseProg);
+            tipHalfW = baseHalfW * remain;
+        }
+
+        var fullT = (visibleTipProg - tier.baseProg) / (fullTipProg - tier.baseProg);
+        fullT = Math.min(1, Math.max(0, fullT));
+
+        var bottomCurve = [];
+        for (var k = 0; k < tier.edgePoints.length; k++) {
+            var ep = tier.edgePoints[k];
+            bottomCurve.push({
+                x: centerX + ep.lateral * baseHalfW,
+                y: tierBaseY + ep.drop,
+                u: ep.u
+            });
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(centerX - tipHalfW, tipY);
+        ctx.lineTo(centerX - baseHalfW, tierBaseY);
+        for (var k = 0; k < bottomCurve.length; k++) {
+            ctx.lineTo(bottomCurve[k].x, bottomCurve[k].y);
+        }
+        ctx.lineTo(centerX + baseHalfW, tierBaseY);
+        ctx.lineTo(centerX + tipHalfW, tipY);
+        ctx.closePath();
+
+        var a0 = 0.34 * alphaMul;
+        var a1 = 0.40 * alphaMul;
+        var a2 = 0.48 * alphaMul;
+        var r0 = 120, g0 = 74, b0 = 190;
+        var r1 = 86, g1 = 52, b1 = 150;
+        var r2 = 48, g2 = 26, b2 = 96;
+        if (depthTint) {
+            r0 = Math.max(0, r0 - depthTint); g0 = Math.max(0, g0 - depthTint * 0.4);
+            r1 = Math.max(0, r1 - depthTint); g1 = Math.max(0, g1 - depthTint * 0.4);
+            r2 = Math.max(0, r2 - depthTint); g2 = Math.max(0, g2 - depthTint * 0.4);
+        }
+
+        var grad = ctx.createLinearGradient(centerX, tipY, centerX, tierBaseY + height * 0.03);
+        grad.addColorStop(0, 'rgba(' + r0 + ',' + g0 + ',' + b0 + ',' + a0 + ')');
+        grad.addColorStop(0.4, 'rgba(' + r1 + ',' + g1 + ',' + b1 + ',' + a1 + ')');
+        grad.addColorStop(1, 'rgba(' + r2 + ',' + g2 + ',' + b2 + ',' + a2 + ')');
+        ctx.fillStyle = grad;
+        ctx.fill();
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(200,160,255,' + (0.55 * fullT * alphaMul) + ')';
+        ctx.lineWidth = Math.max(0.8, 1.4 * (height / treeH));
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = 'rgba(160,100,255,' + (0.7 * alphaMul) + ')';
+        ctx.shadowBlur = 6 * (height / treeH);
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+// ============================================================
+// 主树
+// ============================================================
+var TIERS = [];
+var branches = [];
+
+function buildTiers() {
+    TIERS = computeTierGeometry(treeBaseW, treeH, 7, 0);
+    branches = [];
+    branches.push({
+        x1: cx, y1: treeTopY - treeH * 0.05,
+        x2: cx, y2: treeBaseY,
+        width: 2.2,
+        isTrunk: true
+    });
+    TIERS.forEach(function(tier) {
+        var y = treeBaseY - tier.baseProg * treeH;
+        var halfW = tier.baseHalfW * 0.85;
+        branches.push({ x1: cx, y1: y - treeH * 0.045, x2: cx - halfW, y2: y, width: 1.4, isTrunk: false });
+        branches.push({ x1: cx, y1: y - treeH * 0.045, x2: cx + halfW, y2: y, width: 1.4, isTrunk: false });
+    });
+}
+
+function drawTree(growth) {
+    if (growth <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    branches.forEach(function(br) {
+        var brProg = (treeBaseY - br.y2) / treeH;
+        if (growth < brProg * 0.9) return;
+        ctx.strokeStyle = br.isTrunk ? 'rgba(180,140,230,0.55)' : 'rgba(160,110,220,0.4)';
+        ctx.lineWidth = br.width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(br.x1, br.y1);
+        ctx.lineTo(br.x2, br.y2);
+        ctx.stroke();
+    });
+    ctx.restore();
+
+    drawTierTree(cx, treeBaseY, treeH, TIERS, growth, 1, 0);
+
+    for (var i = 1; i < TIERS.length; i++) {
+        var tier = TIERS[i];
+        if (growth < tier.baseProg) continue;
+        var baseY = treeBaseY - tier.baseProg * treeH;
+        var boundaryY = baseY + treeH * 0.02;
+        var boundaryHalfW = tier.baseHalfW * 1.02;
+        var bGrad = ctx.createLinearGradient(cx, boundaryY - 4, cx, boundaryY + 10);
+        bGrad.addColorStop(0, 'rgba(10,4,20,0.0)');
+        bGrad.addColorStop(0.5, 'rgba(10,4,20,0.35)');
+        bGrad.addColorStop(1, 'rgba(10,4,20,0.0)');
+        ctx.fillStyle = bGrad;
+        ctx.beginPath();
+        ctx.moveTo(cx - boundaryHalfW, boundaryY - 4);
+        ctx.lineTo(cx + boundaryHalfW, boundaryY - 4);
+        ctx.lineTo(cx + boundaryHalfW, boundaryY + 10);
+        ctx.lineTo(cx - boundaryHalfW, boundaryY + 10);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    if (growth > 0.35) {
+        var trunkW = treeBaseW * 0.09;
+        var trunkH = treeH * 0.07;
+        var trunkGrad = ctx.createLinearGradient(cx - trunkW / 2, 0, cx + trunkW / 2, 0);
+        trunkGrad.addColorStop(0, 'rgba(46,24,72,0.9)');
+        trunkGrad.addColorStop(0.5, 'rgba(70,40,110,0.95)');
+        trunkGrad.addColorStop(1, 'rgba(40,20,64,0.9)');
+        ctx.fillStyle = trunkGrad;
+        ctx.fillRect(cx - trunkW / 2, treeBaseY - 2, trunkW, trunkH);
+        ctx.fillStyle = 'rgba(180,140,230,0.15)';
+        ctx.fillRect(cx - trunkW / 2 + 1, treeBaseY, trunkW * 0.25, trunkH);
+    }
+}
+
+// ============================================================
+// 次圣诞树
+// ============================================================
+var subTrees = [];
+
+function buildSubTrees() {
+    subTrees = [];
+    var configs = [
+        { xFrac: 0.13, scale: 0.42, depthTint: 26, alpha: 0.85, seed: 1.7, lightColor: 'rgba(216,180,254,' },
+        { xFrac: 0.87, scale: 0.38, depthTint: 22, alpha: 0.82, seed: 3.2, lightColor: 'rgba(196,181,253,' },
+        { xFrac: 0.28, scale: 0.26, depthTint: 40, alpha: 0.62, seed: 5.4, lightColor: 'rgba(180,150,240,' }
+    ];
+    for (var i = 0; i < configs.length; i++) {
+        var cfg = configs[i];
+        var sH = treeH * cfg.scale;
+        var sW = treeBaseW * cfg.scale;
+
+        var lights = [];
+        var lightCount = Math.round(30 * cfg.scale + 8);
+        for (var k = 0; k < lightCount; k++) {
+            var prog = rnd(0.05, 0.92);
+            lights.push({
+                prog: prog,
+                lateral: rnd(-0.88, 0.88),
+                size: rnd(0.8, 1.9) * (0.7 + cfg.scale),
+                phase: rnd(0, TAU),
+                speed: rnd(1.2, 2.8),
+                bright: Math.random() < 0.35
+            });
+        }
+
+        subTrees.push({
+            x: W * cfg.xFrac,
+            baseY: groundY - H * 0.005 + (1 - cfg.scale) * 2,
+            height: sH,
+            width: sW,
+            tiers: computeTierGeometry(sW, sH, 6, cfg.seed),
+            alpha: cfg.alpha,
+            depthTint: cfg.depthTint,
+            lights: lights,
+            lightColor: cfg.lightColor
+        });
+    }
+}
+
+function drawSubTrees(time) {
+    var t = time * 0.001;
+    for (var i = 0; i < subTrees.length; i++) {
+        var st = subTrees[i];
+
+        var glowR = st.width * 0.85;
+        var groundGlow = ctx.createRadialGradient(
+            st.x, st.baseY - st.height * 0.05, 0,
+            st.x, st.baseY - st.height * 0.05, glowR
+        );
+        groundGlow.addColorStop(0, 'rgba(139,92,246,' + (0.16 * st.alpha) + ')');
+        groundGlow.addColorStop(0.5, 'rgba(120,74,190,' + (0.06 * st.alpha) + ')');
+        groundGlow.addColorStop(1, 'rgba(120,74,190,0)');
+        ctx.fillStyle = groundGlow;
+        ctx.beginPath();
+        ctx.ellipse(st.x, st.baseY - st.height * 0.05, glowR, glowR * 0.5, 0, 0, TAU);
+        ctx.fill();
+
+        ctx.save();
+        ctx.globalAlpha = st.alpha;
+        drawTierTree(st.x, st.baseY, st.height, st.tiers, 1, st.alpha, st.depthTint);
+
+        var trunkW = st.width * 0.1;
+        var trunkH = st.height * 0.06;
+        ctx.fillStyle = 'rgba(36,18,58,0.9)';
+        ctx.fillRect(st.x - trunkW / 2, st.baseY - 1, trunkW, trunkH);
+        ctx.restore();
+
+        ctx.save();
+        for (var k = 0; k < st.lights.length; k++) {
+            var L = st.lights[k];
+            var ly = st.baseY - L.prog * st.height;
+            var maxHW = st.width * 0.5 * (1 - L.prog);
+            var lx = st.x + L.lateral * maxHW;
+
+            var twinkle = 0.35 + 0.65 * Math.abs(Math.sin(t * L.speed + L.phase));
+            var alpha = twinkle * st.alpha * (L.bright ? 0.95 : 0.6);
+
+            if (L.bright) {
+                ctx.shadowColor = st.lightColor + '0.8)';
+                ctx.shadowBlur = 8 * (0.7 + st.alpha * 0.3);
+            }
+            ctx.fillStyle = st.lightColor + alpha + ')';
+            ctx.beginPath();
+            ctx.arc(lx, ly, L.size, 0, TAU);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        ctx.restore();
+
+        var topY = st.baseY - st.height * 0.97;
+        var pulse = 0.75 + 0.25 * Math.sin(t * 1.6 + i * 2);
+        var starR = st.height * 0.035 * pulse;
+        var starGlow = ctx.createRadialGradient(st.x, topY, 0, st.x, topY, starR * 4);
+        starGlow.addColorStop(0, 'rgba(250,245,255,' + (0.8 * st.alpha) + ')');
+        starGlow.addColorStop(0.3, 'rgba(216,180,254,' + (0.4 * st.alpha) + ')');
+        starGlow.addColorStop(1, 'rgba(168,85,247,0)');
+        ctx.fillStyle = starGlow;
+        ctx.beginPath();
+        ctx.arc(st.x, topY, starR * 4, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(250,245,255,' + (0.9 * st.alpha) + ')';
+        ctx.beginPath();
+        ctx.arc(st.x, topY, starR, 0, TAU);
+        ctx.fill();
+    }
+}
+
+// ============================================================
+// 布局
+// ============================================================
+function calcLayout() {
+    cx = W / 2;
+    groundY = H * 0.82;
+    treeBaseY = groundY - H * 0.012;
+    treeH = Math.min(H * 0.60, W * 0.98);
+    treeTopY = treeBaseY - treeH;
+    treeBaseW = treeH * 0.72;
+}
+
+// ============================================================
+// 背景构建
+// ============================================================
+function buildBgStars() {
+    bgStars = [];
+    var n = Math.floor(W * H / 5500);
+    for (var i = 0; i < n; i++) {
+        bgStars.push({
+            x: Math.random() * W,
+            y: Math.random() * groundY * 0.85,
+            r: 0.3 + Math.random() * 1.1,
+            a: 0.2 + Math.random() * 0.6,
+            ph: Math.random() * TAU,
+            sp: 0.4 + Math.random() * 2
+        });
+    }
+}
+
+function buildSnow() {
+    snow = [];
+    var n = Math.floor(W / 9);
+    for (var i = 0; i < n; i++) {
+        snow.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            r: rnd(0.5, 1.6),
+            vy: rnd(0.25, 0.6),
+            vx: rnd(-0.15, 0.15),
+            a: rnd(0.15, 0.5),
+            ph: Math.random() * TAU
+        });
+    }
+}
+
+function buildAurora() {
+    aurora = [];
+    var cols = ['139,92,246', '192,132,252', '232,121,249'];
+    for (var i = 0; i < 3; i++) {
+        aurora.push({
+            baseY: H * (0.08 + i * 0.06),
+            amp: H * (0.025 + Math.random() * 0.02),
+            freq: 0.8 + Math.random() * 0.7,
+            ph: Math.random() * TAU,
+            sp: 0.15 + Math.random() * 0.2,
+            col: cols[i],
+            thick: H * (0.04 + i * 0.015),
+            inten: 0.08 + i * 0.025
+        });
+    }
+}
+
+function buildMountains() {
+    mountains = [];
+    var layers = [
+        { baseY: groundY - H * 0.02, h: H * 0.18, color: '#150a24', peaks: 7 },
+        { baseY: groundY - H * 0.01, h: H * 0.11, color: '#1d0d33', peaks: 9 }
+    ];
+    layers.forEach(function(layer) {
+        var peaks = [];
+        for (var i = 0; i < layer.peaks; i++) {
+            peaks.push({
+                x: (W / (layer.peaks - 1)) * i,
+                h: layer.h * (0.4 + Math.random() * 0.6)
+            });
+        }
+        mountains.push({ layer: layer, peaks: peaks });
+    });
+}
+
+function buildFarTrees() {
+    farTrees = [];
+    for (var i = 0; i < 16; i++) {
+        var x = rnd(0, W);
+        if (Math.abs(x - cx) < treeBaseW * 0.95) continue;
+        farTrees.push({
+            x: x,
+            baseY: groundY + rnd(-2, 4),
+            h: rnd(H * 0.05, H * 0.10),
+            w: rnd(H * 0.025, H * 0.04)
+        });
+    }
+}
+
+function buildCabin() {
+    var cabinW = Math.max(H * 0.045, W * 0.055);
+    var cabinH = cabinW * 0.66;
+    var desiredX = cx - treeBaseW * 1.45;
+    var minX = cabinW * 1.2;
+    var maxX = cx - treeBaseW * 0.95;
+    var x = Math.max(minX, Math.min(desiredX, maxX));
+
+    cabin = {
+        x: x,
+        baseY: groundY + 2,
+        w: cabinW,
+        h: cabinH
+    };
+}
+
+function buildSnowHills() {
+    snowHills = [];
+    for (var i = 0; i < 3; i++) {
+        snowHills.push({
+            y: groundY + H * 0.02 + i * H * 0.03,
+            alpha: 0.15 - i * 0.04
+        });
+    }
+}
+
+// ============================================================
+// 7 颗主力缠绕星
+// ============================================================
+var STAR_PALETTE = ['#f0abfc', '#d8b4fe', '#c084fc', '#a855f7', '#e879f9', '#ddd6fe', '#faf5ff'];
+var STAR_COUNT = 7;
+
+var STAR_CONFIGS = [];
+function buildStarConfigs() {
+    STAR_CONFIGS = [];
+    for (var i = 0; i < STAR_COUNT; i++) {
+        STAR_CONFIGS.push({
+            color: STAR_PALETTE[i % STAR_PALETTE.length],
+            size: rnd(2.2, 4.4),
+            phase: (i / STAR_COUNT) * TAU + rnd(-0.25, 0.25),
+            turns: rnd(0.9, 1.9),
+            speedMul: rnd(0.78, 1.22),
+            wobbleAmp: rnd(0.08, 0.20),
+            wobbleFreq: rnd(1.8, 4.5)
+        });
+    }
+}
+
+var stars = [];
+var treeDots = [];
+var dotKeys = {};
+
+function buildStars() {
+    stars = [];
+    for (var i = 0; i < STAR_CONFIGS.length; i++) {
+        var cfg = STAR_CONFIGS[i];
+        stars.push({
+            color: cfg.color,
+            size: cfg.size,
+            phase: cfg.phase,
+            turns: cfg.turns,
+            speedMul: cfg.speedMul,
+            wobbleAmp: cfg.wobbleAmp,
+            wobbleFreq: cfg.wobbleFreq,
+            progress: 0,
+            curX: cx,
+            curY: treeBaseY,
+            trail: []
+        });
+    }
+}
+
+function resetGrowth() {
+    treeDots = [];
+    dotKeys = {};
+    sparkles = [];
+    animStart = null;
+    buildStarConfigs();
+    buildStars();
+}
+
+function treeEnvelope(progress) {
+    var bestW = 0;
+    TIERS.forEach(function(tier) {
+        if (progress >= tier.baseProg && progress <= tier.tipProg) {
+            var localT = (tier.tipProg - progress) / (tier.tipProg - tier.baseProg);
+            var w = tier.baseHalfW * localT;
+            if (w > bestW) bestW = w;
+        } else if (progress < tier.baseProg) {
+            if (tier.baseHalfW > bestW) bestW = tier.baseHalfW;
+        }
+    });
+    return bestW;
+}
+
+function spiralCoord(starIdx, progress) {
+    var star = stars[starIdx];
+    var angle = star.phase + progress * TAU * star.turns;
+    var baseR = treeEnvelope(progress);
+    var wobble = 1 + Math.sin(progress * TAU * star.wobbleFreq + star.phase) * star.wobbleAmp;
+    var radius = baseR * 0.82 * wobble;
+    return {
+        x: cx + Math.cos(angle) * radius,
+        y: treeBaseY - progress * treeH
+    };
+}
+
+// ============================================================
+// 星星绘制
+// ============================================================
+function drawStarShape(x, y, size, rotation, color, alpha) {
+    if (alpha === undefined) alpha = 1;
+    ctx.globalAlpha = alpha;
+    var glow = ctx.createRadialGradient(x, y, 0, x, y, size * 6);
+    glow.addColorStop(0, 'rgba(250,245,255,0.95)');
+    glow.addColorStop(0.3, 'rgba(216,180,254,0.45)');
+    glow.addColorStop(1, 'rgba(139,92,246,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, size * 6, 0, TAU);
+    ctx.fill();
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    var spikes = 5, outer = size, inner = size * 0.42;
+    ctx.beginPath();
+    for (var i = 0; i < spikes * 2; i++) {
+        var r = (i % 2 === 0) ? outer : inner;
+        var ang = (i / (spikes * 2)) * TAU - Math.PI / 2;
+        var px = Math.cos(ang) * r;
+        var py = Math.sin(ang) * r;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    var sg = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    sg.addColorStop(0, '#ffffff');
+    sg.addColorStop(0.5, color);
+    sg.addColorStop(1, '#7c3aed');
+    ctx.fillStyle = sg;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20;
+    ctx.fill();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+}
+
+// ============================================================
+// 金色描边艺术字（方案A：手写体 + 逐字错位）
+// ============================================================
+var greetingMainText = "";
+var greetingSubText = "";
+var greetingRevealStart = 6000;
+
+var greetingFontStack = "'Segoe Script', 'Bradley Hand', 'Brush Script MT', 'Comic Sans MS', 'Marker Felt', 'Chalkboard SE', cursive, 'Microsoft YaHei'";
+
+function buildGreetingText() {
+    greetingMainText = NAME + " " + YEAR;
+    greetingSubText = "MERRY CHRISTMAS";
+}
+
+function buildCharTransforms(text, seedBase) {
+    var arr = [];
+    for (var i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        var seed = i * 9301 + seedBase * 49297;
+        var r1 = ((seed * 233280) % 1000) / 1000;
+        var r2 = ((seed * 7919) % 1000) / 1000;
+        var r3 = ((seed * 104729) % 1000) / 1000;
+        var r4 = ((seed * 15485863) % 1000) / 1000;
+
+        var isSpace = (ch === ' ');
+
+        arr.push({
+            ch: ch,
+            rot: (r1 - 0.5) * 0.157,
+            dy: (r2 - 0.5) * 7,
+            dx: (r3 - 0.5) * 3,
+            scale: 0.92 + r4 * 0.16,
+            isSpace: isSpace
+        });
+    }
+    return arr;
+}
+
+var mainChars = [];
+var subChars = [];
+
+function rebuildCharLayouts() {
+    mainChars = buildCharTransforms(greetingMainText, 1);
+    subChars = buildCharTransforms(greetingSubText, 2);
+}
+
+function measureChars(chars, ctx, fontSize) {
+    var total = 0;
+    for (var i = 0; i < chars.length; i++) {
+        total += ctx.measureText(chars[i].ch).width * chars[i].scale;
+    }
+    return total;
+}
+
+function drawHandwrittenLine(chars, centerX, centerY, fontSize, reveal, t, baseAlpha) {
+    var ctxFont = 'bold ' + fontSize + 'px ' + greetingFontStack;
+    ctx.font = ctxFont;
+    var totalW = measureChars(chars, ctx, fontSize);
+
+    var cursorX = centerX - totalW / 2;
+
+    for (var i = 0; i < chars.length; i++) {
+        var c = chars[i];
+        var charW = ctx.measureText(c.ch).width * c.scale;
+
+        if (!c.isSpace) {
+            var cxChar = cursorX + charW / 2 + c.dx;
+            var cyChar = centerY + c.dy;
+
+            var charDelay = i / chars.length * 0.5;
+            var charReveal = Math.min(1, Math.max(0, (reveal - charDelay) / 0.5));
+            if (charReveal <= 0) {
+                cursorX += charW;
+                continue;
+            }
+
+            ctx.save();
+            ctx.translate(cxChar, cyChar);
+            ctx.rotate(c.rot);
+            ctx.scale(c.scale, c.scale);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            var floatY = Math.sin(t * 0.9 + i * 0.6) * 1.5;
+            var floatX = Math.cos(t * 0.7 + i * 0.9) * 1.0;
+            ctx.translate(floatX, floatY);
+
+            ctx.shadowColor = 'rgba(255,200,90,' + (0.85 * charReveal * baseAlpha) + ')';
+            ctx.shadowBlur = fontSize * 0.55;
+
+            ctx.globalAlpha = charReveal * baseAlpha;
+
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = 'rgba(92, 42, 8, 0.95)';
+            ctx.lineWidth = Math.max(2, fontSize * 0.085);
+            var offs = [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]];
+            for (var oi = 0; oi < offs.length; oi++) {
+                ctx.strokeText(c.ch, offs[oi][0], offs[oi][1]);
+            }
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = 'rgba(60, 26, 4, 1)';
+            ctx.lineWidth = Math.max(2.2, fontSize * 0.095);
+            ctx.strokeText(c.ch, 0, 0);
+
+            var fillGrad = ctx.createLinearGradient(0, -fontSize * 0.55, 0, fontSize * 0.55);
+            fillGrad.addColorStop(0, '#fffceb');
+            fillGrad.addColorStop(0.2, '#ffeaa6');
+            fillGrad.addColorStop(0.5, '#ffd05e');
+            fillGrad.addColorStop(0.78, '#e9a726');
+            fillGrad.addColorStop(1, '#b47008');
+            ctx.fillStyle = fillGrad;
+            ctx.fillText(c.ch, 0, 0);
+
+            ctx.save();
+            ctx.globalAlpha = charReveal * baseAlpha * 0.55;
+            ctx.beginPath();
+            ctx.rect(-charW, -fontSize * 0.6, charW * 2, fontSize * 0.44);
+            ctx.clip();
+            var shineGrad = ctx.createLinearGradient(0, -fontSize * 0.55, 0, -fontSize * 0.05);
+            shineGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
+            shineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = shineGrad;
+            ctx.fillText(c.ch, 0, 0);
+            ctx.restore();
+
+            var breath = 0.45 + 0.55 * Math.sin(t * 1.4 + i * 0.5);
+            ctx.globalAlpha = charReveal * baseAlpha * 0.22 * breath;
+            ctx.shadowColor = 'rgba(255,210,110,1)';
+            ctx.shadowBlur = fontSize * 0.9;
+            ctx.fillStyle = 'rgba(255,225,140,0.4)';
+            ctx.fillText(c.ch, 0, 0);
+            ctx.shadowBlur = 0;
+
+            ctx.restore();
+        }
+
+        cursorX += charW;
+    }
+}
+
+function drawGreeting(now) {
+    if (now < greetingRevealStart) return;
+
+    var revealT = (now - greetingRevealStart) / 2800;
+    revealT = Math.min(1, revealT);
+
+    var t = now * 0.001;
+
+    var mainFontSize = Math.max(20, Math.min(62, Math.min(W * 0.085, H * 0.052)));
+    var subFontSize = mainFontSize * 0.52;
+
+    ctx.font = 'bold ' + mainFontSize + 'px ' + greetingFontStack;
+    var mainW = measureChars(mainChars, ctx, mainFontSize);
+    if (mainW > W * 0.88) {
+        var scaleDown = (W * 0.88) / mainW;
+        mainFontSize *= scaleDown;
+        subFontSize = mainFontSize * 0.52;
+        ctx.font = 'bold ' + mainFontSize + 'px ' + greetingFontStack;
+        mainW = measureChars(mainChars, ctx, mainFontSize);
+    }
+
+    ctx.font = 'bold ' + subFontSize + 'px ' + greetingFontStack;
+    var subW = measureChars(subChars, ctx, subFontSize);
+    if (subW > W * 0.9) {
+        var sd = (W * 0.9) / subW;
+        subFontSize *= sd;
+    }
+
+    var mainY = H * 0.10;
+    var subY = mainY + mainFontSize * 0.95;
+
+    var haloW = Math.max(mainW, subW) * 0.8;
+    var haloH = mainFontSize * 1.7;
+    var haloCy = mainY + (subY - mainY) * 0.45;
+    var halo = ctx.createRadialGradient(cx, haloCy, 0, cx, haloCy, haloW);
+    halo.addColorStop(0, 'rgba(255,195,75,' + (0.24 * revealT) + ')');
+    halo.addColorStop(0.45, 'rgba(255,170,60,' + (0.10 * revealT) + ')');
+    halo.addColorStop(1, 'rgba(255,150,50,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.ellipse(cx, haloCy, haloW, haloH * 0.7, 0, 0, TAU);
+    ctx.fill();
+
+    drawHandwrittenLine(mainChars, cx, mainY, mainFontSize, revealT, t, 1);
+
+    var subReveal = Math.min(1, Math.max(0, (revealT - 0.25) / 0.75));
+    if (subReveal > 0) {
+        drawHandwrittenLine(subChars, cx, subY, subFontSize, subReveal, t + 0.4, 0.88);
+    }
+}
+
+// ============================================================
+// 背景绘制
+// ============================================================
+function drawSceneBackdrop(t, time) {
+    mountains.forEach(function(m) {
+        var layer = m.layer;
+        ctx.fillStyle = layer.color;
+        ctx.beginPath();
+        ctx.moveTo(-20, groundY + 4);
+        for (var i = 0; i < m.peaks.length; i++) {
+            var p = m.peaks[i];
+            var midX = i === 0 ? 0 : (m.peaks[i - 1].x + p.x) / 2;
+            ctx.lineTo(p.x - (p.x - midX) * 0.5, layer.baseY - p.h);
+            ctx.lineTo(p.x, layer.baseY);
+            ctx.lineTo(p.x + 20, layer.baseY);
+        }
+        ctx.lineTo(W + 20, groundY + 4);
+        ctx.closePath();
+        ctx.fill();
+    });
+
+    farTrees.forEach(function(tr) {
+        ctx.fillStyle = '#0d0618';
+        for (var lvl = 0; lvl < 3; lvl++) {
+            var ly = tr.baseY - (tr.h / 3) * lvl - tr.h * 0.1;
+            var lw = tr.w * (1 - lvl * 0.25);
+            var lh = tr.h / 2.2;
+            ctx.beginPath();
+            ctx.moveTo(tr.x, ly - lh);
+            ctx.lineTo(tr.x - lw, ly + lh * 0.3);
+            ctx.lineTo(tr.x + lw, ly + lh * 0.3);
+            ctx.closePath();
+            ctx.fill();
+        }
+    });
+
+    drawSubTrees(time);
+
+    if (cabin) {
+        ctx.fillStyle = '#0a0410';
+        ctx.beginPath();
+        ctx.moveTo(cabin.x, cabin.baseY - cabin.h * 1.6);
+        ctx.lineTo(cabin.x - cabin.w * 0.8, cabin.baseY - cabin.h * 0.9);
+        ctx.lineTo(cabin.x + cabin.w * 0.8, cabin.baseY - cabin.h * 0.9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#0d0818';
+        ctx.fillRect(cabin.x - cabin.w * 0.6, cabin.baseY - cabin.h * 0.9, cabin.w * 1.2, cabin.h * 0.9);
+        var glow = 0.4 + 0.25 * Math.sin(t * 1.5);
+        ctx.fillStyle = 'rgba(251,191,36,' + glow + ')';
+        ctx.fillRect(cabin.x - cabin.w * 0.3, cabin.baseY - cabin.h * 0.6, cabin.w * 0.25, cabin.h * 0.25);
+        ctx.fillRect(cabin.x + cabin.w * 0.05, cabin.baseY - cabin.h * 0.6, cabin.w * 0.25, cabin.h * 0.25);
+        var wg = ctx.createRadialGradient(cabin.x, cabin.baseY - cabin.h * 0.5, 0, cabin.x, cabin.baseY - cabin.h * 0.5, cabin.w * 1.8);
+        wg.addColorStop(0, 'rgba(251,191,36,' + (glow * 0.25) + ')');
+        wg.addColorStop(1, 'rgba(251,191,36,0)');
+        ctx.fillStyle = wg;
+        ctx.beginPath();
+        ctx.arc(cabin.x, cabin.baseY - cabin.h * 0.5, cabin.w * 1.8, 0, TAU);
+        ctx.fill();
+    }
+}
+
+function drawGround(t) {
+    var g = ctx.createLinearGradient(0, groundY, 0, H);
+    g.addColorStop(0, '#1a1030');
+    g.addColorStop(0.3, '#120a24');
+    g.addColorStop(1, '#08040f');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, groundY, W, H - groundY);
+
+    var topG = ctx.createLinearGradient(0, groundY - 4, 0, groundY + 16);
+    topG.addColorStop(0, 'rgba(216,180,254,0.22)');
+    topG.addColorStop(1, 'rgba(216,180,254,0)');
+    ctx.fillStyle = topG;
+    ctx.fillRect(0, groundY - 4, W, 20);
+
+    snowHills.forEach(function(hill) {
+        ctx.beginPath();
+        ctx.moveTo(0, hill.y);
+        ctx.bezierCurveTo(W * 0.25, hill.y - 8, W * 0.6, hill.y + 10, W, hill.y - 3);
+        ctx.lineTo(W, H);
+        ctx.lineTo(0, H);
+        ctx.closePath();
+        var gr = ctx.createLinearGradient(0, hill.y, 0, H);
+        gr.addColorStop(0, 'rgba(216,180,254,' + hill.alpha * 0.6 + ')');
+        gr.addColorStop(1, 'rgba(60,20,110,0)');
+        ctx.fillStyle = gr;
+        ctx.fill();
+    });
+
+    var rootGlow = ctx.createRadialGradient(cx, treeBaseY, 0, cx, treeBaseY, treeBaseW * 0.55);
+    rootGlow.addColorStop(0, 'rgba(168,85,247,0.25)');
+    rootGlow.addColorStop(0.5, 'rgba(139,92,246,0.08)');
+    rootGlow.addColorStop(1, 'rgba(139,92,246,0)');
+    ctx.fillStyle = rootGlow;
+    ctx.beginPath();
+    ctx.ellipse(cx, treeBaseY + 8, treeBaseW * 0.55, treeBaseW * 0.1, 0, 0, TAU);
+    ctx.fill();
+}
+
+// ============================================================
+// 持续星光
+// ============================================================
+function spawnSparkle(now) {
+    var progress = Math.random();
+    var y = treeBaseY - progress * treeH;
+    var maxHalfW = treeEnvelope(progress) * 0.9;
+    var x = cx + rnd(-maxHalfW, maxHalfW);
+    var colors = ['#f0abfc', '#d8b4fe', '#c084fc', '#a855f7', '#faf5ff'];
+    sparkles.push({
+        x: x, y: y,
+        size: rnd(0.8, 2.2),
+        maxSize: rnd(3, 7),
+        color: colors[Math.floor(Math.random() * colors.length)],
+        life: 1,
+        decay: rnd(0.012, 0.025)
+    });
+}
+
+// ============================================================
+// 圣诞老人
+// ============================================================
+var skySantas = [];
+function buildSkySantas() {
+    skySantas = [
+        { yFrac: 0.16, speed: 0.055, scale: 1.00, delayYears: 0.0, phase: 0.0, dir: -1 },
+        { yFrac: 0.28, speed: 0.038, scale: 0.78, delayYears: 0.35, phase: 1.7, dir: -1 },
+        { yFrac: 0.10, speed: 0.070, scale: 0.62, delayYears: 0.62, phase: 3.1, dir: -1 },
+        { yFrac: 0.36, speed: 0.030, scale: 0.90, delayYears: 0.15, phase: 4.4, dir: -1 }
+    ];
+}
+var groundSanta = { dir: 1, pos: 0, speed: 0.014, phase: 0 };
+
+function drawSantaScale(x, y, dir, scale) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale * (dir === 1 ? -1 : 1), scale);
+    drawSantaBody(0, 0);
+    ctx.restore();
+}
+
+function drawSantaBody(x, y) {
+    ctx.fillStyle = '#b91c1c';
+    ctx.beginPath();
+    ctx.moveTo(x - 28, y + 6);
+    ctx.quadraticCurveTo(x - 22, y + 15, x - 8, y + 15);
+    ctx.lineTo(x + 16, y + 15);
+    ctx.quadraticCurveTo(x + 26, y + 15, x + 28, y + 7);
+    ctx.lineTo(x + 24, y + 4);
+    ctx.lineTo(x + 16, y + 11);
+    ctx.lineTo(x - 22, y + 11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 32, y + 17);
+    ctx.quadraticCurveTo(x - 22, y + 21, x - 5, y + 21);
+    ctx.lineTo(x + 20, y + 21);
+    ctx.quadraticCurveTo(x + 30, y + 20, x + 32, y + 8);
+    ctx.stroke();
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.ellipse(x + 2, y - 4, 12, 15, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#fde2c4';
+    ctx.beginPath();
+    ctx.arc(x + 8, y - 17, 7, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.moveTo(x + 1, y - 21);
+    ctx.lineTo(x + 15, y - 21);
+    ctx.lineTo(x + 10, y - 30);
+    ctx.quadraticCurveTo(x + 16, y - 32, x + 20, y - 28);
+    ctx.lineTo(x + 17, y - 23);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(x + 10, y - 12, 6, 0, Math.PI);
+    ctx.fill();
+    ctx.fillStyle = '#111827';
+    ctx.beginPath();
+    ctx.arc(x + 6, y - 18, 1.2, 0, TAU);
+    ctx.arc(x + 11, y - 18, 1.2, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#92400e';
+    ctx.beginPath();
+    ctx.ellipse(x - 34, y + 2, 10, 7, -0.3, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x - 24, y - 6, 6, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#78350f';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(x - 24, y - 11);
+    ctx.lineTo(x - 28, y - 18);
+    ctx.lineTo(x - 32, y - 16);
+    ctx.moveTo(x - 25, y - 12);
+    ctx.lineTo(x - 22, y - 19);
+    ctx.lineTo(x - 18, y - 17);
+    ctx.stroke();
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(x - 20, y - 5, 2, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = '#92400e';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x - 38, y + 7); ctx.lineTo(x - 38, y + 14);
+    ctx.moveTo(x - 32, y + 8); ctx.lineTo(x - 32, y + 14);
+    ctx.stroke();
+}
+
+function drawSledTrail(x, y, dir, scale) {
+    ctx.save();
+    ctx.globalAlpha = 0.28;
+    ctx.strokeStyle = 'rgba(216,180,254,0.6)';
+    ctx.lineWidth = 1.6 * scale;
+    ctx.beginPath();
+    var trailLen = 80 * scale;
+    var startX = x + (dir === -1 ? trailLen : -trailLen);
+    ctx.moveTo(startX, y + 18 * scale);
+    ctx.quadraticCurveTo(x, y + 10 * scale, x + (dir === -1 ? -20 : 20) * scale, y + 16 * scale);
+    ctx.stroke();
+    ctx.restore();
+}
+
+// ============================================================
+// 主循环
+// ============================================================
+var animStart = null;
+var GROWTH_TIME = 5500;
+
+function frame(now) {
+    var t = now * 0.001;
+    if (animStart === null) animStart = now;
+    var elapsed = now - animStart;
+    var growthRaw = Math.min(elapsed / GROWTH_TIME, 1);
+    var growth = 1 - Math.pow(1 - growthRaw, 1.8);
+
+    var sky = ctx.createLinearGradient(0, 0, 0, groundY);
+    sky.addColorStop(0, '#0a0416');
+    sky.addColorStop(0.5, '#150a28');
+    sky.addColorStop(1, '#22103a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, groundY);
+
+    for (var bi = 0; bi < aurora.length; bi++) {
+        var band = aurora[bi];
+        var pts = [];
+        for (var i = 0; i <= 30; i++) {
+            var px = (W / 30) * i;
+            var wave = Math.sin(i * 0.32 * band.freq + t * band.sp + band.ph) * band.amp
+                     + Math.sin(i * 0.15 * band.freq + t * band.sp * 1.5) * band.amp * 0.4;
+            pts.push({ x: px, y: band.baseY + wave });
+        }
+        var ag = ctx.createLinearGradient(0, band.baseY - band.amp, 0, band.baseY + band.thick);
+        ag.addColorStop(0, 'rgba(' + band.col + ',0)');
+        ag.addColorStop(0.4, 'rgba(' + band.col + ',' + band.inten + ')');
+        ag.addColorStop(0.65, 'rgba(' + band.col + ',' + (band.inten * 1.3) + ')');
+        ag.addColorStop(1, 'rgba(' + band.col + ',0)');
+        ctx.fillStyle = ag;
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        for (var i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x, pts[i].y + band.thick);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    for (var i = 0; i < bgStars.length; i++) {
+        var s = bgStars[i];
+        var tw = 0.5 + 0.5 * Math.sin(t * s.sp + s.ph);
+        ctx.globalAlpha = s.a * tw;
+        ctx.fillStyle = '#e9d5ff';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r, 0, TAU);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    drawSceneBackdrop(t, elapsed);
+    drawGround(t);
+
+    drawTree(growth);
+
+    if (growthRaw < 1) {
+        for (var si = 0; si < stars.length; si++) {
+            var star = stars[si];
+            var targetProgress = Math.min(1, growth * star.speedMul);
+            var prevProg = star.progress;
+            star.progress = targetProgress;
+
+            if (targetProgress > prevProg) {
+                var travelled = targetProgress - prevProg;
+                var cursor = prevProg;
+                while (cursor < targetProgress) {
+                    var stepLen = travelled * (0.03 + Math.random() * 0.11);
+                    cursor = Math.min(targetProgress, cursor + stepLen);
+
+                    var p = spiralCoord(si, cursor);
+                    var key = Math.round(p.x / 6) + ',' + Math.round(p.y / 6);
+                    if (!dotKeys[key]) {
+                        dotKeys[key] = true;
+                        if (Math.random() < 0.55) {
+                            treeDots.push({
+                                x: p.x, y: p.y,
+                                size: rnd(0.9, 2.4),
+                                baseColor: STAR_CONFIGS[si].color,
+                                born: now,
+                                twk: Math.random() * TAU,
+                                bright: Math.random() < 0.16
+                            });
+                        }
+                    }
+                }
+            }
+
+            var cur = spiralCoord(si, star.progress);
+            star.curX = cur.x;
+            star.curY = cur.y;
+            star.trail.push({ x: cur.x, y: cur.y });
+            if (star.trail.length > 32) star.trail.shift();
+        }
+    } else {
+        for (var si = 0; si < stars.length; si++) {
+            var star = stars[si];
+            var ang = t * (0.6 + si * 0.08) + STAR_CONFIGS[si].phase;
+            var orbitR = treeBaseW * (0.18 + (si % 3) * 0.06);
+            var topY = treeTopY - treeH * (0.02 + (si % 2) * 0.05);
+            star.curX = cx + Math.cos(ang) * orbitR;
+            star.curY = topY + Math.sin(ang) * orbitR * 0.3;
+            if (star.trail.length > 0 && Math.random() > 0.5) star.trail.shift();
+        }
+    }
+
+    for (var i = 0; i < treeDots.length; i++) {
+        var d = treeDots[i];
+        var ageSec = (now - d.born) / 1000;
+        var appear = Math.min(1, ageSec * 5);
+        var alpha = appear * 0.9;
+        if (d.bright) {
+            alpha *= 0.4 + 0.6 * Math.abs(Math.sin(t * 2.8 + d.twk));
+            ctx.shadowColor = d.baseColor;
+            ctx.shadowBlur = 11;
+        }
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = d.baseColor;
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.size * appear, 0, TAU);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+
+    var rate = 0.6 + growth * 1.2;
+    if (Math.random() < rate) spawnSparkle(now);
+    if (Math.random() < rate * 0.5) spawnSparkle(now);
+    for (var i = sparkles.length - 1; i >= 0; i--) {
+        var sp = sparkles[i];
+        sp.life -= sp.decay;
+        if (sp.life <= 0) { sparkles.splice(i, 1); continue; }
+        var sz = sp.maxSize * (1 - sp.life) * 4;
+        if (sz > sp.maxSize) sz = sp.maxSize;
+        ctx.globalAlpha = sp.life * 0.9;
+        ctx.strokeStyle = sp.color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sp.x - sz, sp.y); ctx.lineTo(sp.x + sz, sp.y);
+        ctx.moveTo(sp.x, sp.y - sz); ctx.lineTo(sp.x, sp.y + sz);
+        ctx.stroke();
+        ctx.fillStyle = sp.color;
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, sp.size * sp.life, 0, TAU);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    for (var si = 0; si < stars.length; si++) {
+        var star = stars[si];
+        for (var k = 0; k < star.trail.length; k++) {
+            var pt = star.trail[k];
+            var ratio = k / star.trail.length;
+            ctx.globalAlpha = ratio * ratio * 0.5;
+            ctx.fillStyle = star.color;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 0.6 + ratio * 2.6, 0, TAU);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    for (var si = 0; si < stars.length; si++) {
+        var star = stars[si];
+        drawStarShape(star.curX, star.curY, star.size, t * 3 + si * 1.7, star.color, 1);
+    }
+
+    if (growthRaw > 0.95) {
+        var ta = Math.min(1, (growthRaw - 0.95) / 0.05);
+        var topY2 = treeTopY - treeH * 0.10;
+        var tg = ctx.createRadialGradient(cx, topY2, 0, cx, topY2, treeH * 0.14);
+        tg.addColorStop(0, 'rgba(250,245,255,' + (0.5 * ta) + ')');
+        tg.addColorStop(0.3, 'rgba(216,180,254,' + (0.3 * ta) + ')');
+        tg.addColorStop(1, 'rgba(168,85,247,0)');
+        ctx.fillStyle = tg;
+        ctx.beginPath();
+        ctx.arc(cx, topY2, treeH * 0.14, 0, TAU);
+        ctx.fill();
+        drawStarShape(cx, topY2, treeH * 0.055, t * 1.2, '#f0abfc', ta);
+    }
+
+    for (var k = 0; k < skySantas.length; k++) {
+        var sc = skySantas[k];
+        var cycle = (t * sc.speed + sc.delayYears) % 1;
+        var sx = W + 120 - cycle * (W + 240);
+        var sy = H * sc.yFrac + Math.sin(t * 1.1 + sc.phase) * H * 0.012;
+        drawSledTrail(sx, sy, sc.dir, sc.scale);
+        drawSantaScale(sx, sy, sc.dir, sc.scale);
+    }
+
+    {
+        groundSanta.pos += groundSanta.speed * 0.02;
+        if (groundSanta.pos > 1.15) groundSanta.pos = -0.15;
+        var gx = groundSanta.pos * W;
+        var gy = groundY + H * 0.045 + Math.sin(t * 2.2) * 1.5;
+        var gScale = Math.max(H * 0.00075, 0.42);
+        drawSantaScale(gx, gy, groundSanta.dir, gScale);
+        ctx.save();
+        ctx.globalAlpha = 0.3;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        ctx.beginPath();
+        ctx.ellipse(gx, gy + 16 * gScale, 42 * gScale, 6 * gScale, 0, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+    }
+
+    for (var i = 0; i < snow.length; i++) {
+        var f = snow[i];
+        f.y += f.vy * 0.5;
+        f.x += f.vx + Math.sin(t + f.ph) * 0.25;
+        if (f.y > H + 5) { f.y = -5; f.x = Math.random() * W; }
+        if (f.x < -5) f.x = W + 5;
+        if (f.x > W + 5) f.x = -5;
+        ctx.globalAlpha = f.a * 0.7;
+        ctx.fillStyle = '#f5e6ff';
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, f.r, 0, TAU);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    for (var i = bursts.length - 1; i >= 0; i--) {
+        var b = bursts[i];
+        b.x += b.vx; b.y += b.vy;
+        b.vx *= 0.98; b.vy *= 0.98;
+        b.vy += b.grav;
+        b.life -= b.decay;
+        if (b.life <= 0) { bursts.splice(i, 1); continue; }
+        ctx.globalAlpha = b.life;
+        ctx.fillStyle = b.color;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size * b.life, 0, TAU);
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    drawGreeting(elapsed);
+
+    requestAnimationFrame(frame);
+}
+
+// ============================================================
+canvas.addEventListener('pointerdown', function(e) {
+    if (!audioUnlocked) initAudioOnce();
+    playClickSound();
+
+    var n = 50 + Math.floor(Math.random() * 30);
+    var colors = ['#f0abfc', '#d8b4fe', '#c084fc', '#a855f7', '#ffffff'];
+    for (var i = 0; i < n; i++) {
+        var ang = Math.random() * TAU;
+        var sp = 2 + Math.random() * 7;
+        bursts.push({
+            x: e.clientX, y: e.clientY,
+            vx: Math.cos(ang) * sp,
+            vy: Math.sin(ang) * sp,
+            size: 1.5 + Math.random() * 3,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            life: 1,
+            decay: 0.01 + Math.random() * 0.01,
+            grav: 0.03 + Math.random() * 0.06
+        });
+    }
+});
+
+// ============================================================
+function handleResize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    canvas.width = W * DPR;
+    canvas.height = H * DPR;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    calcLayout();
+    buildBgStars();
+    buildSnow();
+    buildAurora();
+    buildMountains();
+    buildFarTrees();
+    buildCabin();
+    buildSnowHills();
+    buildSkySantas();
+    buildSubTrees();
+    buildTiers();
+    buildGreetingText();
+    rebuildCharLayouts();
+    resetGrowth();
+}
+
+window.addEventListener('resize', handleResize);
+handleResize();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
